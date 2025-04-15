@@ -19,21 +19,24 @@ jobs:
         with:
           packages: libcups2-dev
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "23.11.0"
+          cache: "npm"
+
+      - name: Install pyright
+        run: npm install --global pyright
+
       - uses: astral-sh/setup-uv@v5
         with:
           version: "0.6.14"
 
       - name: Check lint rules
-        run: uv sync --frozen
-      - uses: jakebailey/pyright-action@v2
-      - name: Check lint rules
         run: make -o .setup lint
 
       - name: Build package
-        run: |
-          uv run --frozen python -m build
+        run: uv run --frozen python -m build
 
       - name: Publish to PyPI
-        run: |
-          uv run --frozen twine upload dist/*
+        run: uv run --frozen twine upload dist/*
 
