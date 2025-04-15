@@ -22,16 +22,15 @@ run: .setup
 
 .PHONY: lint
 lint: .setup
-	@uv run ruff check --quiet --no-fix printserver/ || ( \
-		echo '\n❌ Linting failed. Consider running `make fix`.' >&2; \
-		exit 1)
-	@uv run ruff format --quiet --check printserver/ || ( \
-		echo '\n❌ Formatting issues found. Consider running `make fix`.' >&2; \
-		exit 1)
+	@uv lock --check && \
+	 uv run ruff check --quiet --no-fix printserver/ && \
+	 uv run ruff format --quiet --check printserver/ || ( \
+	     echo '\n❌ Formatting issues found. Consider running `make fix`.' >&2; exit 1)
 	@uv run pyright --warnings --level warning printserver/
 
 .PHONY: fix
 fix: .setup
+	uv lock
 	uv run ruff check --quiet --fix printserver/
 	uv run ruff format --quiet printserver/
 	uv run pyright --warnings --level warning printserver/
