@@ -1,6 +1,6 @@
 [project.urls]
-Homepage = "https://github.com/shortstorybox/print-server"
-Issues = "https://github.com/shortstorybox/print-server/issues"
+Homepage = "https://github.com/shortstorybox/printserver"
+Issues = "https://github.com/shortstorybox/printserver/issues"
 
 [project]
 name = "printserver"
