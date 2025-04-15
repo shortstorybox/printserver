@@ -1,0 +1,7 @@
+#!/bin/bash
+set -e
+sleep 0.1
+/bin/launchctl bootout system /Library/LaunchDaemons/com.shortstorybox.PrintServer.plist || true
+sleep 0.1
+/bin/launchctl bootstrap system /Library/LaunchDaemons/com.shortstorybox.PrintServer.plist
+echo postinstall completed successfully > /dev/stderr
