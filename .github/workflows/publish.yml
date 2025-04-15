@@ -21,7 +21,7 @@ jobs:
 
       - name: Check lint rules
         run: |
-          make lint
+          make -o .setup lint
 
       - name: Build package
         run: |
