@@ -23,6 +23,8 @@ jobs:
         with:
           node-version: "23.11.0"
           cache: "npm"
+          # Dummy value so cache is always restored unconditionally
+          cache-dependency-path: '.python-version'
 
       - name: Install pyright
         run: npm install --global pyright
