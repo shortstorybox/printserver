@@ -64,8 +64,7 @@ class IndexPage:
                 )
         response.status = falcon.HTTP_200
         response.content_type = "text/html"
-        response.text = r"""
-            <!DOCTYPE html>
+        response.text = r"""<!DOCTYPE html>
             <html>
             <head>
               <title>Short Story Print Server</title>
