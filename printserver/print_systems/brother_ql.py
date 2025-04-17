@@ -148,5 +148,5 @@ class BrotherQLPrintSystem(PrintSystem):
             return PrintJob(
                 job_id="",
                 job_state=JobState.ABORTED,
-                job_state_reasons=result.get("printer_state", {}).get("errors", []),
+                job_state_reasons=(result.get("printer_state") or {}).get("errors", []),
             )

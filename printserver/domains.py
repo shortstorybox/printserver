@@ -85,12 +85,14 @@ class AllowDomainMiddleware:
             raise falcon.HTTPBadRequest(
                 description=f"Origin header cannot be parsed: {repr(origin)}"
             )
-        elif self.is_allowed(origin):
+        elif not self.is_allowed(origin):
             api_base = request.forwarded_prefix
             raise falcon.HTTPForbidden(
                 description=f"Visit {api_base}/domains/approve?origin={quote(origin)} to allow this domain to use the printer.",
                 href=f"{api_base}/domains/approve?origin={quote(origin)}",
             )
+        else:
+            pass  # Domain is allowed. Allow the request to proceed.
 
     def process_response(self, request, response, resource, req_succeeded) -> None:
         origin = request.get_header("Origin", default="")
