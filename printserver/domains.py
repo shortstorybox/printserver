@@ -81,6 +81,8 @@ class AllowDomainMiddleware:
             # and doesn't send the Origin header while relying on CORS for
             # access control.
             pass
+        elif origin == request.forwarded_prefix:
+            pass # Allow requests from the printserver itself
         elif not self.format_is_valid(origin):
             raise falcon.HTTPBadRequest(
                 description=f"Origin header cannot be parsed: {repr(origin)}"
