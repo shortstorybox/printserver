@@ -90,7 +90,7 @@ class AllowDomainMiddleware:
         elif not self.is_allowed(origin):
             api_base = request.forwarded_prefix
             raise falcon.HTTPForbidden(
-                description=f"Visit {api_base}/domains/approve?origin={quote(origin)} to allow this domain to use the printer.",
+                description=f"Open this page to enable printing: {api_base}/domains/approve?origin={quote(origin)}",
                 href=f"{api_base}/domains/approve?origin={quote(origin)}",
             )
         else:
@@ -119,20 +119,23 @@ class DomainsSubmitApi:
         self.allowlist_middleware = allowlist_middleware
 
     def on_post(self, request, response):
-        origin = AllowDomainMiddleware.normalize_origin(
-            request.media.get("origin") or ""
-        )
-        if not origin:
+        domain_to_add = AllowDomainMiddleware.normalize_origin(request.media.get("origin") or "")
+        if not domain_to_add:
             raise falcon.HTTPBadRequest(description="No origin parameter specified")
-        if not AllowDomainMiddleware.format_is_valid(origin):
+        if not AllowDomainMiddleware.format_is_valid(domain_to_add):
             raise falcon.HTTPBadRequest(description="The origin parameter is invalid")
+
+        origin_header = AllowDomainMiddleware.normalize_origin(request.get_header("Origin", default=""))
+        if origin_header != request.forwarded_prefix:
+            raise falcon.HTTPForbidden(
+                description=f"This endpoint can only be called from HTTP origin {request.forwarded_prefix}")
 
         # NOTE: This only works correctly because all uvicorn worker threads
         # are in the same Python process. If this were running in a multi-process
         # configuration, the allowlist would not be updated for other processes
         # and we'd need to continually re-load the config file.
-        DomainsSubmitApi.add_to_config_file(origin)
-        self.allowlist_middleware.allowlist.add(origin)
+        DomainsSubmitApi.add_to_config_file(domain_to_add)
+        self.allowlist_middleware.allowlist.add(domain_to_add)
         response.media = {}
 
     @staticmethod
@@ -154,14 +157,6 @@ class DomainsSubmitApi:
 
 class DomainsApprovePage:
     def on_get(self, request, response):
-        origin = AllowDomainMiddleware.normalize_origin(
-            request.params.get("origin") or ""
-        )
-        if not origin:
-            raise falcon.HTTPBadRequest(description="Must specify an origin parameter")
-        if not AllowDomainMiddleware.format_is_valid(origin):
-            raise falcon.HTTPBadRequest(description="Origin parameter is invalid")
-        response.status = falcon.HTTP_200
         response.content_type = "text/html"
         response.set_header(
             "Content-Security-Policy",
@@ -169,8 +164,55 @@ class DomainsApprovePage:
         )
         response.set_header("Cross-Origin-Opener-Policy", "same-origin")
         response.set_header("X-Frame-Options", "DENY")
-        response.text = """
-            <!DOCTYPE html>
+
+        origin = AllowDomainMiddleware.normalize_origin(
+            request.params.get("origin") or ""
+        )
+        if not origin:
+            response.status = falcon.HTTP_400
+            response.text = """<!DOCTYPE html>
+              <html>
+              <head>
+                <title>Printer Permissions</title>
+                <style>
+                  body { font-family: sans-serif; margin: 0px; padding: 1em; }
+                  h1 { margin-top: 0; font-size: 1.5em; }
+                </style>
+              </head>
+              <body>
+                <h1>Empty Domain</h1>
+                <p>Please specify a domain</p>
+              </body>
+              </html>
+            """ % {
+                "origin": escape(origin),
+            }
+            return
+        elif not AllowDomainMiddleware.format_is_valid(origin):
+            response.status = falcon.HTTP_400
+            response.text = """<!DOCTYPE html>
+              <html>
+              <head>
+                <title>Printer Permissions</title>
+                <style>
+                  body { font-family: sans-serif; margin: 0px; padding: 1em; }
+                  h1 { margin-top: 0; font-size: 1.5em; }
+                </style>
+              </head>
+              <body>
+                <h1>Invalid Domain</h1>
+                <p>The specified domain is invalid</p>
+                <p><b>Valid example:</b> <code>https://example.com</code></p>
+                <p><b>Invalid example:</b> <code>%(origin)s</code></p>
+              </body>
+              </html>
+            """ % {
+                "origin": escape(request.params.get("origin")),
+            }
+            return
+
+        response.status = falcon.HTTP_200
+        response.text = """<!DOCTYPE html>
             <html>
             <head>
               <title>Printer Permissions</title>
@@ -205,7 +247,7 @@ class DomainsApprovePage:
                       // to succeed, so display a message to the user as backup.
                       window.close();
                       document.querySelector('#close-window').style.display = 'block';
-                    }, 2000);
+                    }, 1000);
                   }).catch(function (error) {
                     showError(error.message || error);
                   });
