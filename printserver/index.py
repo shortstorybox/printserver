@@ -44,7 +44,7 @@ class IndexPage:
                         <p><b>Print System:</b> %(printSystem)s</p>
                         <p><b>Printer State:</b> %(printerState)s</p>
                         <p><b>State Reasons:</b> %(stateReasons)s</p>
-                        <p><b>Options (default is underlined):</b> <ul>%(options)s</ul></p>
+                        <p><b>Options:</b> <ul>%(options)s</ul></p>
                     </div>
                 """
                     % {
@@ -70,16 +70,27 @@ class IndexPage:
               <title>Short Story Print Server</title>
               <script>
                 function addDomain() {
-                  const origin = prompt("Enter the domain to authorize. Include the https:// prefix:");
-                  if (origin.trim()) {
-                    fetch('/domains/submit', {
+                  const domainInput = document.getElementById('domain');
+                  const domain = domainInput.value.toLowerCase().trim();
+                  domainInput.value = '';
+                  window.open(
+                    '/domains/approve?origin=' + encodeURIComponent(domain),
+                    'Approve Domain',
+                    'width=600,height=400,scrollbars=no,resizable=no,' +
+                    'menubar=no,toolbar=no,location=no,status=no'
+                  );
+                }
+                function runTest() {
+                  fetch('%(api_base)s/print-job', {
                       method: 'POST',
                       headers: {'Content-Type': 'application/json'},
-                      body: JSON.stringify({ origin: origin })
-                    }).then(r => r.json())
-                      .then(j => alert(j.description || 'Domain authorized successfully.'))
-                      .catch(alert);
-                  }
+                      body: JSON.stringify({
+                          async: true,
+                          files: [{fileUrl: 'https://pdfobject.com/pdf/sample.pdf'}]
+                      })
+                  }).then(r=>r.json())
+                    .then(r=>alert(r.description || 'Print job submitted successfully.'))
+                    .catch(alert);
                 }
               </script>
               <style>
@@ -95,6 +106,9 @@ class IndexPage:
                   user-select: none; font-weight: bold; float: right; margin-left: 1em; background-color: #bbb;
                   padding: 0.2em; border-radius: 0.2em;
                 }
+                pre button {
+                  padding: 0.2em; float: right; margin-left: 1em; clear: right; margin-top: 0.3em;
+                }
               </style>
             </head>
             <body>
@@ -107,15 +121,17 @@ class IndexPage:
               <p>Version: %(version)s</p>
               <h2>Authorized Domains</h2>
               <p>Only authorized domains are allowed to print.</p>
-              <button onclick="addDomain()">Add Domain</button>
-              <h2>Printer List</h2>
-              <div id="printer-list">%(printers)s</div>
+              <form onSubmit="addDomain(); return false;">
+                <input type="text" id="domain" placeholder="Domain to authorize" />
+                <button>Add Domain</button>
+              </form>
               <h2>API Usage Examples</h2>
-              <pre><span class="lang">JavaScript</span>fetch('%(api_base)s/print-job', {
+              <pre><span class="lang">JavaScript</span><button onClick="runTest();">Test Run</button>fetch('%(api_base)s/print-job', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
-        files: [{fileUrl: 'https://httpbin.org/image/png'}]
+        async: true,
+        files: [{fileUrl: 'https://pdfobject.com/pdf/sample.pdf'}]
     })
 }).then(r=>r.json())
   .then(r=>alert(r.description || 'Print job submitted successfully.'))
@@ -123,7 +139,9 @@ class IndexPage:
               <pre><span class="lang">curl</span><b style="user-select: none;">$ </b>curl %(api_base)s/printers</pre>
               <pre><span class="lang">curl</span><b style="user-select: none;">$ </b>curl %(api_base)s/print-job \
     -H 'Content-Type: application/json' \
-    -d '{"files": [{"fileUrl": "https://httpbin.org/image/png"}]}'</pre>
+    -d '{"files": [{"fileUrl": "https://pdfobject.com/pdf/sample.pdf"}]}'</pre>
+              <h2>Printer List</h2>
+              <div id="printer-list">%(printers)s</div>
             </body>
             </html>
         """ % dict(
