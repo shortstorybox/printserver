@@ -4,7 +4,7 @@ Issues = "https://github.com/shortstorybox/printserver/issues"
 
 [project]
 name = "printserver"
-version = "2.2.3"  # Updated by `make version-bump`
+version = "2.3.0"  # Updated by `make version-bump`
 description = "The missing JavaScript Printer API"
 license = "GPL-3.0-or-later"
 readme = "README.md"
