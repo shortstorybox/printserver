@@ -119,16 +119,21 @@ class DomainsSubmitApi:
         self.allowlist_middleware = allowlist_middleware
 
     def on_post(self, request, response):
-        domain_to_add = AllowDomainMiddleware.normalize_origin(request.media.get("origin") or "")
+        domain_to_add = AllowDomainMiddleware.normalize_origin(
+            request.media.get("origin") or ""
+        )
         if not domain_to_add:
             raise falcon.HTTPBadRequest(description="No origin parameter specified")
         if not AllowDomainMiddleware.format_is_valid(domain_to_add):
             raise falcon.HTTPBadRequest(description="The origin parameter is invalid")
 
-        origin_header = AllowDomainMiddleware.normalize_origin(request.get_header("Origin", default=""))
+        origin_header = AllowDomainMiddleware.normalize_origin(
+            request.get_header("Origin", default="")
+        )
         if origin_header != request.forwarded_prefix:
             raise falcon.HTTPForbidden(
-                description=f"This endpoint can only be called from HTTP origin {request.forwarded_prefix}")
+                description=f"This endpoint can only be called from HTTP origin {request.forwarded_prefix}"
+            )
 
         # NOTE: This only works correctly because all uvicorn worker threads
         # are in the same Python process. If this were running in a multi-process
@@ -184,9 +189,7 @@ class DomainsApprovePage:
                 <p>Please specify a domain</p>
               </body>
               </html>
-            """ % {
-                "origin": escape(origin),
-            }
+            """
             return
         elif not AllowDomainMiddleware.format_is_valid(origin):
             response.status = falcon.HTTP_400
