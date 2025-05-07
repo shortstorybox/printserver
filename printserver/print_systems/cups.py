@@ -177,7 +177,10 @@ class CupsPrintSystem(PrintSystem):
             cups_options["fit-to-page"] = "true"
             job_id = str(
                 self.conn.printFiles(
-                    printer.identifier, [f.name for f in tempfiles], job_title, cups_options
+                    printer.identifier,
+                    [f.name for f in tempfiles],
+                    job_title,
+                    cups_options,
                 )
             )
 
