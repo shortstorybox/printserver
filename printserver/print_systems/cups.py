@@ -16,6 +16,8 @@ import time
 import falcon
 import cups
 from typing import Optional
+from pdf2image import convert_from_bytes
+from PIL import Image
 
 
 class CupsPrintSystem(PrintSystem):
@@ -168,21 +170,32 @@ class CupsPrintSystem(PrintSystem):
 
         with ExitStack() as stack:
             tempfiles = []
+
             for file in files:
-                f = stack.enter_context(NamedTemporaryFile())
-                f.write(file.content)
-                f.flush()
-                tempfiles.append(f)
+                # Convert PDF bytes to a list of images (one per page)
+                pages = convert_from_bytes(file.content, dpi=203)
+
+                for i, page in enumerate(pages):
+                    # Rotate each image 90 degrees clockwise
+                    rotated = page.rotate(270, expand=True)
+
+                    # Save to a temporary PNG file
+                    f = stack.enter_context(NamedTemporaryFile(suffix=".png", delete=False))
+                    rotated.save(f, format="PNG", dpi=(203, 203))
+                    f.flush()
+                    tempfiles.append(f)
+
+            # Set CUPS options
             cups_options = options.copy()
             cups_options["fit-to-page"] = "true"
-            cups_options["raw"] = "false" # Ensure we are not skipping the PDF conversion pipeline
+
+            # Print all image files
             job_id = str(
                 self.conn.printFiles(
                     printer.identifier,
                     [f.name for f in tempfiles],
                     job_title,
                     cups_options,
-                    "application/pdf",
                 )
             )
 
