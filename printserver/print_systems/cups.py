@@ -175,12 +175,14 @@ class CupsPrintSystem(PrintSystem):
                 tempfiles.append(f)
             cups_options = options.copy()
             cups_options["fit-to-page"] = "true"
+            cups_options["raw"] = "false" # Ensure we are not skipping the PDF conversion pipeline
             job_id = str(
                 self.conn.printFiles(
                     printer.identifier,
                     [f.name for f in tempfiles],
                     job_title,
                     cups_options,
+                    "application/pdf",
                 )
             )
 
