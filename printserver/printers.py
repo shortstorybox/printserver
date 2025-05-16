@@ -20,8 +20,25 @@ class ListPrintersApi:
                     "printerState": printer.printer_state.name.lower(),
                     "stateReasons": printer.state_reasons,
                     "printSystem": printer.print_system,
-                    "supportedOptions": printer.supported_options,
-                    "defaultOptions": printer.default_options,
+                    "mediaSizes": [
+                        {
+                            'name': size.name,
+                            'width': size.width,
+                            'height': size.height,
+                            'units': size.units.value,
+                        }
+                        for size in printer.media_sizes
+                    ],
+                    "supportedOptions": {
+                        key: {
+                            "displayName": spec.display_name,
+                            "defaultChoice": spec.default_choice,
+                            "choices": [
+                                { 'name': x } for x in spec.choices
+                            ],
+                        }
+                        for key, spec in sorted(printer.supported_options.items())
+                    },
                 }
                 for printer in printers
             ]

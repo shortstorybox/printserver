@@ -87,8 +87,9 @@ release: | lint warn-uncommitted-diffs
 	    echo '❌ Version in pyproject.toml on origin/main does not match the bumped git tag ($(NEXT_VERSION)).' >&2; exit 1)
 	$(MAKE) clean
 	$(MAKE) dist/PrintServer.pkg
+	mv dist/PrintServer.pkg dist/PrintServer-v$(VERSION).pkg
 	@GH_PROMPT_DISABLED= gh release create v"$(VERSION)" \
-	    --generate-notes --title="Release v$(VERSION)" dist/PrintServer.pkg
+	    --generate-notes --title="Release v$(VERSION)" dist/PrintServer-v$(VERSION).pkg
 
 .PHONY: warn-uncommitted-diffs
 warn-uncommitted-diffs:

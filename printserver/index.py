@@ -26,14 +26,26 @@ class IndexPage:
         printers_html = []
         for system in self.print_systems.supported_systems:
             for printer in system.get_printers(PrinterSelector()):
-                options_html = {
-                    key: ", ".join(
-                        f"<b><u>{escape(v)}</u></b>"
-                        if v == printer.default_options[key]
-                        else escape(v)
-                        for v in values
+                sizes_html = ''.join(
+                    "<option value='%(name)s'>%(name)s (%(width)s x %(height)s %(units)s)</option>" % dict(
+                        name=escape(size.name),
+                        width=float(size.width),
+                        height=float(size.height),
+                        units=escape(size.units.value),
                     )
-                    for key, values in printer.supported_options.items()
+                    for size in printer.media_sizes
+                )
+                options_html = {
+                    key: "".join(
+                        "<option value='%(choice)s' %(selected)s>%(key)s: %(choice)s</option>"
+                        % dict(
+                            choice=escape(x),
+                            selected="selected" if x == spec.default_choice else "",
+                            key=escape(key),
+                        )
+                        for x in spec.choices
+                    )
+                    for key, spec in printer.supported_options.items()
                 }
                 printers_html.append(
                     """
@@ -41,26 +53,33 @@ class IndexPage:
                         <h2>%(name)s</h2>
                         <p><b>Name:</b> %(name)s</p>
                         <p><b>Model:</b> %(model)s</p>
-                        <p><b>Print System:</b> %(printSystem)s</p>
-                        <p><b>Printer State:</b> %(printerState)s</p>
-                        <p><b>State Reasons:</b> %(stateReasons)s</p>
+                        <p><b>Print System:</b> %(print_system)s</p>
+                        <p><b>Printer State:</b> %(printer_state)s</p>
+                        <p><b>State Reasons:</b> %(state_reasons)s</p>
+                        <p><b>Media Size:</b> <select><option/>%(sizes_html)s</select></p>
                         <p><b>Options:</b> <ul>%(options)s</ul></p>
                     </div>
                 """
-                    % {
-                        "name": escape(printer.name),
-                        "model": escape(printer.model),
-                        "printSystem": escape(printer.print_system),
-                        "printerState": escape(printer.printer_state.name),
-                        "stateReasons": escape(
+                    % dict(
+                        name=escape(printer.name),
+                        model=escape(printer.model),
+                        print_system=escape(printer.print_system),
+                        printer_state=escape(printer.printer_state.name),
+                        state_reasons=escape(
                             ", ".join(printer.state_reasons) or "None"
                         ),
-                        "options": "\n".join(
-                            f"<li>{escape(k)}: {v_html}</li>"
-                            for k, v_html in sorted(options_html.items())
+                        sizes_html=sizes_html,
+                        options="\n".join(
+                            "<li>%(display_name)s <select><option/>%(html)s</select></li>"
+                            % dict(
+                                display_name=escape(option_spec.display_name),
+                                option_name=escape(option_name),
+                                html=options_html[option_name],
+                            )
+                            for option_name, option_spec in printer.supported_options.items()
                         )
                         or "None",
-                    }
+                    )
                 )
         response.status = falcon.HTTP_200
         response.content_type = "text/html"
@@ -86,10 +105,14 @@ class IndexPage:
                       headers: {'Content-Type': 'application/json'},
                       body: JSON.stringify({
                           async: true,
-                          files: [{fileUrl: 'https://pdfobject.com/pdf/sample.pdf'}]
+                          options: {'landscape': 'true'},
+                          files: [
+                              {fileUrl: 'https://pdfobject.com/pdf/sample.pdf'},
+                              {text: '\n\n  Hello World!', contentType: 'text/plain'}
+                          ]
                       })
                   }).then(r=>r.json())
-                    .then(r=>alert(r.description || 'Print job submitted successfully.'))
+                    .then(r=>alert(r.description || r.title || 'Submitted successfully.'))
                     .catch(alert);
                 }
               </script>
@@ -131,10 +154,14 @@ class IndexPage:
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
         async: true,
-        files: [{fileUrl: 'https://pdfobject.com/pdf/sample.pdf'}]
+        options: {'landscape': 'true'},
+        files: [
+            {fileUrl: 'https://pdfobject.com/pdf/sample.pdf'},
+            {text: '\n\n  Hello World!', contentType: 'text/plain'}
+        ]
     })
 }).then(r=>r.json())
-  .then(r=>alert(r.description || 'Print job submitted successfully.'))
+  .then(r=>alert(r.description || r.title || 'Submitted successfully.'))
   .catch(alert);</pre>
               <pre><span class="lang">curl</span><b style="user-select: none;">$ </b>curl %(api_base)s/printers</pre>
               <pre><span class="lang">curl</span><b style="user-select: none;">$ </b>curl %(api_base)s/print-job \
