@@ -36,6 +36,28 @@ class PrintJob:
 
 
 @dataclass
+class PrintOption:
+    display_name: str
+    default_choice: Optional[str]
+    choices: list[str]
+
+
+class SizeUnit(Enum):
+    POINTS = 'points'
+    INCHES = 'inches'
+    MILLIMETERS = 'mm'
+
+
+@dataclass
+class MediaSize:
+    name: str
+    width: float
+    height: float
+    units: SizeUnit
+    full_identifier: str
+    
+
+@dataclass
 class PrinterDetails:
     name: str
     model: str
@@ -43,21 +65,8 @@ class PrinterDetails:
     printer_state: PrinterState
     state_reasons: list[str]
     print_system: str
-    supported_options: dict[str, list[str]]
-    default_options: dict[str, str]
-
-    def get_warnings(self, user_supplied_options: dict[str, str]) -> list[str]:
-        warnings = []
-        for option, value in user_supplied_options.items():
-            if option not in self.supported_options:
-                warnings.append(f"Printer does not support option: {repr(option)}")
-            elif value not in self.supported_options[option]:
-                supported_repr = ", ".join(map(repr, self.supported_options[option]))
-                warnings.append(
-                    f"Printer does not support option {repr(option)}={repr(value)}'. "
-                    f"Supported values are: {supported_repr}"
-                )
-        return warnings
+    media_sizes: list[MediaSize]
+    supported_options: dict[str, PrintOption]
 
 
 @dataclass
@@ -129,6 +138,7 @@ class PrintSystem(ABC):
         files: list[PrintFile],
         job_title: str,
         is_async: bool,
+        media_size: Optional[MediaSize],
         options: dict[str, str],
     ) -> PrintJob:
         raise NotImplementedError

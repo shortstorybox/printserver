@@ -8,6 +8,8 @@ from printserver.print_systems.base import (
     PrinterDetails,
     JobState,
     PrinterState,
+    MediaSize,
+    SizeUnit,
 )
 import re
 from io import BytesIO
@@ -91,8 +93,16 @@ class BrotherQLPrintSystem(PrintSystem):
                         printer_state=PrinterState.IDLE,
                         state_reasons=[],
                         print_system=self.system_name(),
+                        media_sizes=[
+                            MediaSize(
+                                name='103x164',
+                                width=103,
+                                height=164,
+                                units='mm',
+                                full_identifier='custom_103x164mm_103x164mm',
+                            )
+                        ],
                         supported_options={},
-                        default_options={},
                     )
                 )
         return results
@@ -106,6 +116,7 @@ class BrotherQLPrintSystem(PrintSystem):
         files: list[PrintFile],
         job_title: str,
         is_async: bool,
+        media_size: Optional[MediaSize],
         options: dict[str, str],
     ) -> PrintJob:
         raster = self.brother_ql.BrotherQLRaster("QL-1050")

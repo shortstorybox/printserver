@@ -1,3 +1,4 @@
+import re
 from printserver.print_systems.base import (
     PrintSystem,
     PrinterSelector,
@@ -6,6 +7,9 @@ from printserver.print_systems.base import (
     PrinterDetails,
     JobState,
     PrinterState,
+    PrintOption,
+    SizeUnit,
+    MediaSize,
 )
 import os
 import os.path
@@ -16,6 +20,93 @@ import time
 import falcon
 import cups
 from typing import Optional
+
+
+# CUPS-specific options that are not printer-specific
+GENERIC_OPTIONS = {
+    "copies": PrintOption(
+        display_name="Number of Copies",
+        default_choice="1",
+        choices=[str(x) for x in range(1, 101)],
+    ),
+    "collate": PrintOption(
+        display_name="Collate Copies",
+        default_choice="false",
+        choices=["true", "false"],
+    ),
+    "fit-to-page": PrintOption( # Shorthand for print-scaling=fill
+        display_name="Scale to Fill Page",
+        default_choice="false",
+        choices=["true", "false"],
+    ),
+    "mirror": PrintOption(
+        display_name="Flip Horizontally",
+        default_choice="false",
+        choices=["true", "false"],
+    ),
+    "landscape": PrintOption(
+        display_name="Landscape",
+        default_choice="false",
+        choices=["true", "false"],
+    ),
+    "outputorder": PrintOption(
+        display_name="Sheet Order",
+        default_choice="normal",
+        choices=["normal", "reverse"],
+    ),
+    "page-border": PrintOption(
+        display_name="Border",
+        default_choice="none",
+        choices=["none", "single", "single-thick", "double", "double-thick"],
+    ),
+    "number-up": PrintOption(
+        display_name="Pages per Sheet",
+        default_choice="1",
+        choices=["1", "2", "4", "6", "9", "16"],
+    ),
+    "number-up-layout": PrintOption(
+        display_name="Layout Direction",
+        default_choice="lrtb",
+        choices=["lrtb", "btlr", "btrl", "lrbt", "rlbt", "rltb", "tblr", "tbrl"],
+    ),
+    "print-scaling": PrintOption(
+        display_name="Scale to Fit Paper Size",
+        default_choice="none",
+        choices=["auto", "auto-fit", "fill", "fit", "none"],
+    ),
+    "job-sheets": PrintOption(
+        display_name="Banner/Trailer Page",
+        default_choice="none,none",
+        choices=[
+            "none,none",
+            "classified,none",
+            "confidential,none",
+            "secret,none",
+            "standard,none",
+            "topsecret,none",
+            "unclassified,none",
+            "none,classified",
+            "none,confidential",
+            "none,secret",
+            "none,standard",
+            "none,topsecret",
+            "none,unclassified",
+        ],
+    ),
+}
+
+# CUPS-specific options that are disallowed for security
+DISALLOWED_GENERIC_OPTIONS = {
+    "job-priority",
+    "job-hold-until",
+    "job-cancel-after",
+    "notify-lease-duration",
+    "notify-events",
+    "media", # Use the top-level mediaSize param instead
+    "document-format", # Filled automatically
+    "prettyprint", # Deprecated, and only works for text-only files
+    "orientation-requested", # Use "landscape" option instead
+}
 
 
 class CupsPrintSystem(PrintSystem):
@@ -56,13 +147,109 @@ class CupsPrintSystem(PrintSystem):
             ):
                 continue
 
-            all_attributes = self.conn.getPrinterAttributes(printer_name)
+            supported_options = {}
+
+            # Parse IPP options
+            ipp_attributes = self.conn.getPrinterAttributes(printer_name)
             job_attributes = [
                 key
-                for key in all_attributes.get("job-creation-attributes-supported", [])
-                if key + "-default" in all_attributes
-                and key + "-supported" in all_attributes
+                for key in ipp_attributes.get("job-creation-attributes-supported", [])
+                if not key.endswith("-col") # IPP collections are not supported
             ]
+            for option_name in job_attributes:
+                default_choice = None
+                if option_name + "-default" in ipp_attributes:
+                    default_choice = self.parse_ipp_attribute(
+                        option_name, ipp_attributes[option_name + "-default"]
+                    )
+                choices = ipp_attributes.get(option_name + "-supported", [])
+                if (
+                    isinstance(choices, tuple)
+                    and len(choices) == 2
+                    and isinstance(choices[0], int)
+                    and isinstance(choices[1], int)
+                ):
+                    # This is an integer-range option. To avoid overflowing the
+                    # response, support a maximum of 100 choices.
+                    max_value = min(choices[0] + 99, choices[1])
+                    choices = [str(x) for x in range(choices[0], max_value + 1)]
+                elif isinstance(choices, list):
+                    pass
+                else:
+                    # We do not support tuple or singleton attribute specs,
+                    # because pycups doesn't parse the required data
+                    continue
+
+                parsed_choices = [self.parse_ipp_attribute(option_name, x) for x in choices]
+                if default_choice and default_choice not in parsed_choices:
+                    parsed_choices = [default_choice] + parsed_choices
+                if not parsed_choices:
+                    continue  # Skip options that are missing a spec
+                supported_options[option_name] = PrintOption(
+                    display_name=option_name.replace("-", " ")
+                    .replace("_", " ")
+                    .capitalize(),
+                    default_choice=default_choice,
+                    choices=parsed_choices,
+                )
+
+            # Parse PPD options
+            try:
+                ppd_file = self.conn.getPPD(printer_name)
+            except cups.IPPError:
+                ppd_file = None
+            if ppd_file:
+                try:
+                    ppd = cups.PPD(ppd_file)
+                except RuntimeError:
+                    ppd = None
+                if ppd:
+                    groups = list(ppd.optionGroups)
+                    for group in groups:
+                        for subgroup in group.subgroups:
+                            groups.append(subgroup)
+                        for option in group.options:
+                            default_choice = option.defchoice or None
+                            choices = [x['choice'] for x in option.choices]
+                            if default_choice and default_choice not in choices:
+                                choices = [default_choice] + choices
+                            supported_options[option.keyword] = PrintOption(
+                                display_name=option.text,
+                                default_choice=default_choice,
+                                choices=choices,
+                            )
+
+            supported_options.update(GENERIC_OPTIONS) # Non-printer-specific options
+            for option_name in DISALLOWED_GENERIC_OPTIONS:
+                supported_options.pop(option_name, None)
+
+            # Parse supported media sizes
+            media_sizes = []
+            media_names = ipp_attributes.get('media-supported') or []
+            for media_id in media_names:
+                if not re.match(r'^[^_]*_[^_]*_[^_]*$', media_id):
+                    continue
+                world_region, size_name, dimensions = media_id.split('_')
+                dimensions = dimensions.lower()
+                if dimensions.endswith('in'):
+                    dimensions = dimensions[:-2]
+                    units = SizeUnit.INCHES
+                elif dimensions.lower().endswith('mm'):
+                    dimensions = dimensions[:-2]
+                    units = SizeUnit.MILLIMETERS
+                else:
+                    units = SizeUnit.POINTS
+                if not re.match(r'^[0-9]*[.]?[0-9]+x[0-9]*[.]?[0-9]+$', dimensions):
+                    continue
+                width, height = dimensions.split('x')
+                media_sizes.append(MediaSize(
+                    name=size_name,
+                    width=float(width),
+                    height=float(height),
+                    units=units,
+                    full_identifier=media_id,
+                ))
+
             results.append(
                 PrinterDetails(
                     name=printer["printer-info"],
@@ -71,29 +258,19 @@ class CupsPrintSystem(PrintSystem):
                     printer_state=PrinterState(printer["printer-state"]),
                     state_reasons=printer["printer-state-reasons"],
                     print_system=self.system_name(),
-                    supported_options={
-                        key: [
-                            self.parse_ipp_attribute(key, x)
-                            for x in all_attributes[key + "-supported"]
-                        ]
-                        for key in job_attributes
-                    },
-                    default_options={
-                        key: self.parse_ipp_attribute(
-                            key, all_attributes[key + "-default"]
-                        )
-                        for key in job_attributes
-                    },
+                    media_sizes=media_sizes,
+                    supported_options=supported_options,
                 )
             )
+
         return results
 
     @staticmethod
-    def parse_ipp_attribute(key, value):
+    def parse_ipp_attribute(option_name, value):
         """Convert pycups printer attributes to IPP-compatible strings."""
         if isinstance(value, tuple):
             # Handle resolution tuples (X, Y, 3) -> "XxYdpi"
-            if "resolution" in key and len(value) == 3 and value[2] == 3:
+            if "resolution" in option_name and len(value) == 3 and value[2] == 3:
                 w, h, _ = value
                 return f"{w}x{h}dpi"
             else:
@@ -156,15 +333,42 @@ class CupsPrintSystem(PrintSystem):
         files: list[PrintFile],
         job_title: str,
         is_async: bool,
+        media_size: Optional[MediaSize],
         options: dict[str, str],
     ) -> PrintJob:
+        if not files:
+            raise ValueError()
+
+        for option_name in options:
+            if option_name in DISALLOWED_GENERIC_OPTIONS:
+                raise falcon.HTTPBadRequest(
+                    description=f"Option {option_name} is not permitted"
+                )
+
+        options_ = {k: v.default_choice for k, v in GENERIC_OPTIONS.items()}
+        options_.update(options)
+
+        content_type = re.sub(r";.*", "", files[0].content_type)
         for file in files:
-            if not file.content_type.startswith(
-                "application/pdf"
-            ) and not file.content_type.startswith("image/"):
+            if file.content_type != content_type:
+                # Files have inconsistent content type. PyCups does not support
+                # this, so fall back on CUPS content-type auto-detection.
+                content_type = None
+
+            if file.content_type.startswith("application/pdf"):
+                pass
+            elif file.content_type.startswith("image/"):
+                pass
+            elif file.content_type == "text/plain":
+                pass
+            else:
                 raise falcon.HTTPBadRequest(
                     description=f"Unknown file type: {file.content_type}"
                 )
+        if content_type:
+            options_["document-format"] = content_type
+        if media_size:
+            options_['media'] = media_size.full_identifier
 
         with ExitStack() as stack:
             tempfiles = []
@@ -173,14 +377,12 @@ class CupsPrintSystem(PrintSystem):
                 f.write(file.content)
                 f.flush()
                 tempfiles.append(f)
-            cups_options = options.copy()
-            cups_options["fit-to-page"] = "true"
             job_id = str(
                 self.conn.printFiles(
                     printer.identifier,
                     [f.name for f in tempfiles],
                     job_title,
-                    cups_options,
+                    options_,
                 )
             )
 
