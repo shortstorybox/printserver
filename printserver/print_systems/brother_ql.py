@@ -15,7 +15,7 @@ import re
 from io import BytesIO
 from usb.core import NoBackendError
 
-import falcon
+from falcon import HTTPBadRequest
 import pdf2image
 from PIL import Image, ImageOps
 
@@ -95,11 +95,11 @@ class BrotherQLPrintSystem(PrintSystem):
                         print_system=self.system_name(),
                         media_sizes=[
                             MediaSize(
-                                name='103x164',
+                                name="103x164",
                                 width=103,
                                 height=164,
-                                units='mm',
-                                full_identifier='custom_103x164mm_103x164mm',
+                                units=SizeUnit.MILLIMETERS,
+                                full_identifier="custom_103x164mm_103x164mm",
                             )
                         ],
                         supported_options={},
@@ -135,9 +135,7 @@ class BrotherQLPrintSystem(PrintSystem):
             elif file.content_type.startswith("image/"):
                 images.append(Image.open(BytesIO(file.content)))
             else:
-                raise falcon.HTTPBadRequest(
-                    description=f"Unknown file type: {file.content_type}"
-                )
+                raise HTTPBadRequest(title=f"Unknown file type: {file.content_type}")
 
         pages = [ImageOps.fit(image, (width, height)) for image in images]
         instructions = self.brother_ql.conversion.convert(

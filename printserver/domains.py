@@ -6,6 +6,7 @@ from urllib.parse import quote
 import re
 
 import falcon
+from falcon import HTTPBadRequest, HTTPForbidden
 from logging import getLogger
 
 logger = getLogger(__name__)
@@ -84,13 +85,13 @@ class AllowDomainMiddleware:
         elif origin == request.forwarded_prefix:
             pass  # Allow requests from the printserver itself
         elif not self.format_is_valid(origin):
-            raise falcon.HTTPBadRequest(
-                description=f"Origin header cannot be parsed: {repr(origin)}"
+            raise HTTPBadRequest(
+                title=f"Origin header cannot be parsed: {repr(origin)}"
             )
         elif not self.is_allowed(origin):
             api_base = request.forwarded_prefix
-            raise falcon.HTTPForbidden(
-                description=f"Open this page to enable printing: {api_base}/domains/approve?origin={quote(origin)}",
+            raise HTTPForbidden(
+                title=f"Open this page to enable printing: {api_base}/domains/approve?origin={quote(origin)}",
                 href=f"{api_base}/domains/approve?origin={quote(origin)}",
             )
         else:
@@ -123,16 +124,16 @@ class DomainsSubmitApi:
             request.media.get("origin") or ""
         )
         if not domain_to_add:
-            raise falcon.HTTPBadRequest(description="No origin parameter specified")
+            raise HTTPBadRequest(title="No origin parameter specified")
         if not AllowDomainMiddleware.format_is_valid(domain_to_add):
-            raise falcon.HTTPBadRequest(description="The origin parameter is invalid")
+            raise HTTPBadRequest(title="The origin parameter is invalid")
 
         origin_header = AllowDomainMiddleware.normalize_origin(
             request.get_header("Origin", default="")
         )
         if origin_header != request.forwarded_prefix:
-            raise falcon.HTTPForbidden(
-                description=f"This endpoint can only be called from HTTP origin {request.forwarded_prefix}"
+            raise HTTPForbidden(
+                title=f"This endpoint can only be called from HTTP origin {request.forwarded_prefix}"
             )
 
         # NOTE: This only works correctly because all uvicorn worker threads

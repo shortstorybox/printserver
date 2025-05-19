@@ -1,4 +1,11 @@
-from .print_systems.base import PrinterSelector, PrintFile, MediaSize, SizeUnit, PrinterDetails
+from urllib.parse import urlparse
+from .print_systems.base import (
+    PrinterSelector,
+    PrintFile,
+    MediaSize,
+    SizeUnit,
+    PrinterDetails,
+)
 from requests.exceptions import HTTPError, ConnectionError
 from math import isfinite
 import re
@@ -7,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Union
 
 import falcon
+from falcon import HTTPBadRequest, HTTPNotFound, HTTPInternalServerError
 import requests
 from .print_systems import PrintSystemProvider
 from logging import getLogger
@@ -22,52 +30,52 @@ class ListPrintJobApi:
     @staticmethod
     def validate_options(options):
         if not isinstance(options, dict):
-            raise falcon.HTTPBadRequest(
-                description="Invalid 'options' parameter: must be a dictionary"
+            raise HTTPBadRequest(
+                title="Invalid 'options' parameter: must be a dictionary"
             )
 
         if len(options) > 1023:
-            raise falcon.HTTPBadRequest(
-                description="Invalid 'options' parameter: too many options (max 1023)"
+            raise HTTPBadRequest(
+                title="Invalid 'options' parameter: too many options (max 1023)"
             )
 
         for option_name, value in options.items():
             # Option name
             if not isinstance(option_name, str):
-                raise falcon.HTTPBadRequest(
-                    description=f"Invalid 'options' parameter: option names must be strings. Got {type(option_name).__name__}"
+                raise HTTPBadRequest(
+                    title=f"Invalid 'options' parameter: option names must be strings. Got {type(option_name).__name__}"
                 )
             if len(option_name) > 255:
-                raise falcon.HTTPBadRequest(
-                    description="Invalid 'options' parameter: option name too long (max 255)"
+                raise HTTPBadRequest(
+                    title="Invalid 'options' parameter: option name too long (max 255)"
                 )
             if not re.match(r"^[!-~]+$", option_name):
-                raise falcon.HTTPBadRequest(
-                    description=f"Invalid 'options' parameter: Invalid option name {repr(option_name)}"
+                raise HTTPBadRequest(
+                    title=f"Invalid 'options' parameter: Invalid option name {repr(option_name)}"
                 )
 
             # Option value
             if not isinstance(value, str):
-                raise falcon.HTTPBadRequest(
-                    description=f"Invalid parameter options.{option_name}: Expected string, but got {type(value).__name__}"
+                raise HTTPBadRequest(
+                    title=f"Invalid parameter options.{option_name}: Expected string, but got {type(value).__name__}"
                 )
             if len(value) > 1023:
-                raise falcon.HTTPBadRequest(
-                    description=f"Invalid parameter options.{option_name}: Length too long (max 1023 characters)"
+                raise HTTPBadRequest(
+                    title=f"Invalid parameter options.{option_name}: Length too long (max 1023 characters)"
                 )
             if not re.match(r"^[!-~]+$", value):
-                raise falcon.HTTPBadRequest(
-                    description=f"Invalid parameter options.{option_name}: {repr(value)}"
+                raise HTTPBadRequest(
+                    title=f"Invalid parameter options.{option_name}: {repr(value)}"
                 )
 
     @staticmethod
     def remove_unsupported_options(printer, options) -> dict[str, str]:
-        '''
+        """
         TBD: We currently exclude options that are not supported by the
         printer. The original rationale was security, but we need to consider
         whether it's worth allowing the user to specify arbitrary options
         in case the printer doesn't declare all its supported options.
-        '''
+        """
         result = {}
         for option_name, choice in options.items():
             if option_name in printer.supported_options:
@@ -77,12 +85,24 @@ class ListPrintJobApi:
         return result
 
     @staticmethod
-    def get_warnings(printer, media_size: Optional[MediaSize], user_supplied_options: dict[str, str]) -> list[str]:
+    def get_warnings(
+        printer, media_size: Optional[MediaSize], user_supplied_options: dict[str, str]
+    ) -> list[str]:
         warnings = []
 
         # Media Size
-        if media_size and media_size.width is not None and media_size.name and media_size.name.lower() != 'custom':
-            name, width, height, units = (media_size.name, media_size.width, media_size.height, media_size.units)
+        if (
+            media_size
+            and media_size.width is not None
+            and media_size.name
+            and media_size.name.lower() != "custom"
+        ):
+            name, width, height, units = (
+                media_size.name,
+                media_size.width,
+                media_size.height,
+                media_size.units,
+            )
             for x in printer.media_sizes:
                 if name == x.name:
                     if (width, height, units) != (x.width, x.height, x.units):
@@ -92,6 +112,11 @@ class ListPrintJobApi:
                             f"{width}x{height}{units.value}"
                         )
                     break
+            else:
+                if name and width is None:
+                    warnings.append(
+                        f"Printer does not know how to interpret media size {name} without mediaSize.width/mediaSize.height"
+                    )
 
         # Options
         for option, value in user_supplied_options.items():
@@ -108,77 +133,99 @@ class ListPrintJobApi:
         return warnings
 
     @staticmethod
-    def parse_media_size(printer: PrinterDetails, media_size_param: dict[str, Union[float, str]]) -> Optional[MediaSize]:
+    def parse_media_size(
+        printer: PrinterDetails, media_size_param: dict[str, Union[float, str]]
+    ) -> Optional[MediaSize]:
         if media_size_param is None:
             return None
         if not isinstance(media_size_param, dict):
             raise ValueError(
                 f"If specified, mediaSize must be a dictionary continaing 'name' and/or 'width', 'height', and 'units'. Got: {media_size_param}"
             )
-        name, width, height, units_ = (
-            media_size_param.get('name'),
-            media_size_param.get('width'),
-            media_size_param.get('height'),
-            media_size_param.get('units'),
+        name, width, height, units_param = (
+            media_size_param.get("name"),
+            media_size_param.get("width"),
+            media_size_param.get("height"),
+            media_size_param.get("units"),
         )
-        if not name and not width and not height and not units_:
+        if not name and not width and not height and not units_param:
             return None
         if name is not None and not isinstance(name, str):
-            raise ValueError(
-                f"Invalid value for mediaSize.name: {name}"
-            )
+            raise ValueError(f"Invalid value for mediaSize.name: {name}")
         if (width is None) != (height is None):
             raise ValueError(
-                f"Must specify both mediaSize.width and mediaSize.height, or neither"
+                "Must specify both mediaSize.width and mediaSize.height, or neither"
             )
-        if (width is None) != (units_ is None):
+        if (width is None) != (units_param is None):
             raise ValueError(
-                f"mediaSize.units should be specified along with mediaSize.width/mediaSize.height"
+                "mediaSize.units should be specified along with mediaSize.width/mediaSize.height"
             )
         if width is not None and height is not None:
-            if not isinstance(width, float) or width <= 0 or not isfinite(width) or \
-                    not isinstance(height, float) or height <= 0 or not isfinite(height):
+            if (
+                not isinstance(width, float)
+                or width <= 0
+                or not isfinite(width)
+                or not isinstance(height, float)
+                or height <= 0
+                or not isfinite(height)
+            ):
                 raise ValueError(
                     f"Invalid value for mediaSize.width/mediaSize.height: {width}/{height}"
                 )
-        if units_ is None:
+        if units_param is None:
             units = None
+        elif not isinstance(units_param, str):
+            raise ValueError(f"Invalid value for mediaSize.units: {repr(units_param)}")
         else:
-            if units_ in SizeUnit.__members__:
-                units = SizeUnit[units_]
+            if units_param in SizeUnit.__members__:
+                units = SizeUnit[units_param]
             else:
                 raise ValueError(
-                    f"Invalid value for mediaSize.units: {repr(units)}"
+                    f"Invalid value for mediaSize.units: {repr(units_param)}"
                 )
 
         for x in printer.media_sizes:
-            if name and name.lower() != 'custom':
-                if width is None or (width, height, units) == (x.width, x.height, x.units):
+            if name and name.lower() != "custom":
+                if width is None or (width, height, units) == (
+                    x.width,
+                    x.height,
+                    x.units,
+                ):
+                    width, height, units = x.width, x.height, x.units
                     full_identifier = x.full_identifier
                     break
         else:
+            if not width or not units:
+                return None  # Cannot determine media size
             units_str = (
-                    '' if units is SizeUnit.POINTS else
-                    'mm' if units is SizeUnit.MILLIMETERS else
-                    'inches' if units is SizeUnit.INCHES else None
+                ""
+                if units is SizeUnit.POINTS
+                else "mm"
+                if units is SizeUnit.MILLIMETERS
+                else "inches"
+                if units is SizeUnit.INCHES
+                else None
             )
             # Hack: This identifier format is IPP-specific, whereas this file should
             # be independent of print system. Consider refactoring this in future.
-            full_identifier = f"custom_{width}x{height}{units_str}_{width}x{height}{units_str}"
+            full_identifier = (
+                f"custom_{width}x{height}{units_str}_{width}x{height}{units_str}"
+            )
+        if not isinstance(width, float) or not isinstance(height, float):
+            raise ValueError(f"Cannot determine media width/height for {repr(name)}")
+
         return MediaSize(
-            name=name or 'custom',
+            name=name or "custom",
             width=width,
             height=height,
-            units=SizeUnit[units] if units else None,
+            units=units,
             full_identifier=full_identifier,
         )
 
     def on_post(self, request, response):
         job_title = request.media.get("jobTitle") or ""
         if not isinstance(job_title, str):
-            raise falcon.HTTPBadRequest(
-                description=f"Invalid value for jobTitle: {job_title}"
-            )
+            raise HTTPBadRequest(title=f"Invalid value for jobTitle: {job_title}")
 
         options = request.media.get("options") or {}
         self.validate_options(options)
@@ -186,7 +233,7 @@ class ListPrintJobApi:
         is_async = request.media.get("async") or False
         files = request.media.get("files")
         if not files:
-            raise falcon.HTTPBadRequest(description="Must specify a list of files")
+            raise HTTPBadRequest(title="Must specify a list of files")
 
         futures = {}
         for file in files:
@@ -194,14 +241,14 @@ class ListPrintJobApi:
             if not file_url:
                 continue
             if not isinstance(file_url, str):
-                raise falcon.HTTPBadRequest(description=f"Invalid fileUrl: {file_url}")
+                raise HTTPBadRequest(title=f"Invalid fileUrl: {file_url}")
             if file_url in futures:
-                continue # file is already downloading
+                continue  # file is already downloading
 
-            parsed_url = requests.utils.urlparse(file_url)
+            parsed_url = urlparse(file_url)
             if parsed_url.scheme not in ("http", "https"):
-                raise falcon.HTTPBadRequest(
-                    description=f"fileUrl must start with http:// or https:// - Got: {repr(file_url)}"
+                raise HTTPBadRequest(
+                    title=f"fileUrl must start with http:// or https:// - Got: {repr(file_url)}"
                 )
             futures[file_url] = executor.submit(requests.get, parsed_url.geturl())
 
@@ -212,7 +259,7 @@ class ListPrintJobApi:
                     http_response = futures[file["fileUrl"]].result()
                     http_response.raise_for_status()
                 except (HTTPError, ConnectionError) as e:
-                    raise falcon.HTTPBadRequest(description=f"Error fetching file: {e}")
+                    raise HTTPBadRequest(title=f"Error fetching file: {e}")
                 downloaded_files.append(
                     PrintFile(
                         http_response.headers["content-type"], http_response.content
@@ -221,45 +268,45 @@ class ListPrintJobApi:
             else:
                 content_type = file.get("contentType")
                 if not content_type:
-                    raise falcon.HTTPBadRequest(
-                        description="Must specify files[].contentType or files[].fileUrl"
+                    raise HTTPBadRequest(
+                        title="Must specify files[].contentType or files[].fileUrl"
                     )
                 elif not isinstance(content_type, str):
-                    raise falcon.HTTPBadRequest(
-                        description=f"Invalid value for files[].contentType: {content_type}"
+                    raise HTTPBadRequest(
+                        title=f"Invalid value for files[].contentType: {content_type}"
                     )
 
                 encoded_content = file.get("base64")
                 text_content = file.get("text")
                 if text_content and encoded_content:
-                    raise falcon.HTTPBadRequest(
-                        description="Cannot specify both files[].base64 or files[].text"
+                    raise HTTPBadRequest(
+                        title="Cannot specify both files[].base64 or files[].text"
                     )
                 elif encoded_content:
                     if not isinstance(encoded_content, str):
-                        raise falcon.HTTPBadRequest(
-                            description=f"Invalid value for files[].base64: {encoded_content}"
+                        raise HTTPBadRequest(
+                            title=f"Invalid value for files[].base64: {encoded_content}"
                         )
                     try:
                         content = base64.b64decode(encoded_content, validate=True)
                     except ValueError as e:
-                        raise falcon.HTTPBadRequest(
-                            description=f"Value for files[].base64 is invalid: {e}"
+                        raise HTTPBadRequest(
+                            title=f"Value for files[].base64 is invalid: {e}"
                         )
                 elif text_content:
                     if not isinstance(text_content, str):
-                        raise falcon.HTTPBadRequest(
-                            description=f"Invalid value for files[].text: {text_content}"
+                        raise HTTPBadRequest(
+                            title=f"Invalid value for files[].text: {text_content}"
                         )
                     try:
                         content = text_content.encode("utf-8")
                     except UnicodeEncodeError as e:
-                        raise falcon.HTTPBadRequest(
-                            description=f"Value for files[].text contains invalid Unicode characters: {e}"
+                        raise HTTPBadRequest(
+                            title=f"Value for files[].text contains invalid Unicode characters: {e}"
                         )
                 else:
-                    raise falcon.HTTPBadRequest(
-                        description="Must specify one of files[].contentType, files[].base64, or files[].text"
+                    raise HTTPBadRequest(
+                        title="Must specify one of files[].contentType, files[].base64, or files[].text"
                     )
 
                 downloaded_files.append(
@@ -277,18 +324,18 @@ class ListPrintJobApi:
             if printer:
                 break
         if not printer or not print_system:
-            raise falcon.HTTPBadRequest(
-                description="No matching printer is attached"
+            raise HTTPBadRequest(
+                title="No matching printer is attached"
                 if printer_selector
                 else "No printer is attached"
             )
 
         try:
-            media_size = self.parse_media_size(printer, request.media.get('mediaSize', {}))
-        except ValueError as e:
-            raise falcon.HTTPBadRequest(
-                description=e.args[0]
+            media_size = self.parse_media_size(
+                printer, request.media.get("mediaSize", {})
             )
+        except ValueError as e:
+            raise HTTPBadRequest(title=e.args[0])
 
         warnings = self.get_warnings(printer, media_size, options)
         for warning in warnings:
@@ -300,7 +347,12 @@ class ListPrintJobApi:
             print_system.system_name(),
         )
         print_job = print_system.print(
-            printer, downloaded_files, job_title, is_async, media_size, self.remove_unsupported_options(printer, options)
+            printer,
+            downloaded_files,
+            job_title,
+            is_async,
+            media_size,
+            self.remove_unsupported_options(printer, options),
         )
 
         logger.info(
@@ -331,10 +383,10 @@ class PrintJobApi:
             if job:
                 job_results.append(job)
         if not job_results:
-            raise falcon.HTTPNotFound(description=f"Unrecognized job ID: {job_id}")
+            raise HTTPNotFound(title=f"Unrecognized job ID: {job_id}")
         elif len(job_results) > 1:
-            raise falcon.HTTPInternalServerError(
-                description="Multiple print systems returned job results"
+            raise HTTPInternalServerError(
+                title="Multiple print systems returned job results"
             )
 
         (print_job,) = job_results

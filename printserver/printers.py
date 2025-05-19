@@ -22,10 +22,10 @@ class ListPrintersApi:
                     "printSystem": printer.print_system,
                     "mediaSizes": [
                         {
-                            'name': size.name,
-                            'width': size.width,
-                            'height': size.height,
-                            'units': size.units.value,
+                            "name": size.name,
+                            "width": size.width,
+                            "height": size.height,
+                            "units": size.units.value,
                         }
                         for size in printer.media_sizes
                     ],
@@ -33,9 +33,7 @@ class ListPrintersApi:
                         key: {
                             "displayName": spec.display_name,
                             "defaultChoice": spec.default_choice,
-                            "choices": [
-                                { 'name': x } for x in spec.choices
-                            ],
+                            "choices": [{"name": x} for x in spec.choices],
                         }
                         for key, spec in sorted(printer.supported_options.items())
                     },
