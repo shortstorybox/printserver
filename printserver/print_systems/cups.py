@@ -17,7 +17,7 @@ from contextlib import ExitStack
 from tempfile import NamedTemporaryFile
 import time
 
-import falcon
+from falcon import HTTPInternalServerError, HTTPBadRequest
 import cups
 from typing import Optional
 
@@ -34,7 +34,7 @@ GENERIC_OPTIONS = {
         default_choice="false",
         choices=["true", "false"],
     ),
-    "fit-to-page": PrintOption( # Shorthand for print-scaling=fill
+    "fit-to-page": PrintOption(  # Shorthand for print-scaling=fill
         display_name="Scale to Fill Page",
         default_choice="false",
         choices=["true", "false"],
@@ -102,10 +102,10 @@ DISALLOWED_GENERIC_OPTIONS = {
     "job-cancel-after",
     "notify-lease-duration",
     "notify-events",
-    "media", # Use the top-level mediaSize param instead
-    "document-format", # Filled automatically
-    "prettyprint", # Deprecated, and only works for text-only files
-    "orientation-requested", # Use "landscape" option instead
+    "media",  # Use the top-level mediaSize param instead
+    "document-format",  # Filled automatically
+    "prettyprint",  # Deprecated, and only works for text-only files
+    "orientation-requested",  # Use "landscape" option instead
 }
 
 
@@ -154,7 +154,7 @@ class CupsPrintSystem(PrintSystem):
             job_attributes = [
                 key
                 for key in ipp_attributes.get("job-creation-attributes-supported", [])
-                if not key.endswith("-col") # IPP collections are not supported
+                if not key.endswith("-col")  # IPP collections are not supported
             ]
             for option_name in job_attributes:
                 default_choice = None
@@ -180,7 +180,9 @@ class CupsPrintSystem(PrintSystem):
                     # because pycups doesn't parse the required data
                     continue
 
-                parsed_choices = [self.parse_ipp_attribute(option_name, x) for x in choices]
+                parsed_choices = [
+                    self.parse_ipp_attribute(option_name, x) for x in choices
+                ]
                 if default_choice and default_choice not in parsed_choices:
                     parsed_choices = [default_choice] + parsed_choices
                 if not parsed_choices:
@@ -210,7 +212,7 @@ class CupsPrintSystem(PrintSystem):
                             groups.append(subgroup)
                         for option in group.options:
                             default_choice = option.defchoice or None
-                            choices = [x['choice'] for x in option.choices]
+                            choices = [x["choice"] for x in option.choices]
                             if default_choice and default_choice not in choices:
                                 choices = [default_choice] + choices
                             supported_options[option.keyword] = PrintOption(
@@ -219,36 +221,38 @@ class CupsPrintSystem(PrintSystem):
                                 choices=choices,
                             )
 
-            supported_options.update(GENERIC_OPTIONS) # Non-printer-specific options
+            supported_options.update(GENERIC_OPTIONS)  # Non-printer-specific options
             for option_name in DISALLOWED_GENERIC_OPTIONS:
                 supported_options.pop(option_name, None)
 
             # Parse supported media sizes
             media_sizes = []
-            media_names = ipp_attributes.get('media-supported') or []
+            media_names = ipp_attributes.get("media-supported") or []
             for media_id in media_names:
-                if not re.match(r'^[^_]*_[^_]*_[^_]*$', media_id):
+                if not re.match(r"^[^_]*_[^_]*_[^_]*$", media_id):
                     continue
-                world_region, size_name, dimensions = media_id.split('_')
+                world_region, size_name, dimensions = media_id.split("_")
                 dimensions = dimensions.lower()
-                if dimensions.endswith('in'):
+                if dimensions.endswith("in"):
                     dimensions = dimensions[:-2]
                     units = SizeUnit.INCHES
-                elif dimensions.lower().endswith('mm'):
+                elif dimensions.lower().endswith("mm"):
                     dimensions = dimensions[:-2]
                     units = SizeUnit.MILLIMETERS
                 else:
                     units = SizeUnit.POINTS
-                if not re.match(r'^[0-9]*[.]?[0-9]+x[0-9]*[.]?[0-9]+$', dimensions):
+                if not re.match(r"^[0-9]*[.]?[0-9]+x[0-9]*[.]?[0-9]+$", dimensions):
                     continue
-                width, height = dimensions.split('x')
-                media_sizes.append(MediaSize(
-                    name=size_name,
-                    width=float(width),
-                    height=float(height),
-                    units=units,
-                    full_identifier=media_id,
-                ))
+                width, height = dimensions.split("x")
+                media_sizes.append(
+                    MediaSize(
+                        name=size_name,
+                        width=float(width),
+                        height=float(height),
+                        units=units,
+                        full_identifier=media_id,
+                    )
+                )
 
             results.append(
                 PrinterDetails(
@@ -301,14 +305,12 @@ class CupsPrintSystem(PrintSystem):
             code, reason = e.args
             if code == cups.IPP_NOT_FOUND:
                 return None  # Job does not exist, or has expired
-            raise falcon.HTTPInternalServerError(
-                description=f"Failed to get job attributes from CUPS: {e}"
+            raise HTTPInternalServerError(
+                title=f"Failed to get job attributes from CUPS: {e}"
             )
         job_state_integer = job_attributes.get("job-state")
         if not job_state_integer:
-            raise falcon.HTTPInternalServerError(
-                description="Failed to get job state from CUPS"
-            )
+            raise HTTPInternalServerError(title="Failed to get job state from CUPS")
         job_state = JobState(job_state_integer)
 
         reasons = job_attributes.get("job-state-reasons") or []
@@ -341,9 +343,7 @@ class CupsPrintSystem(PrintSystem):
 
         for option_name in options:
             if option_name in DISALLOWED_GENERIC_OPTIONS:
-                raise falcon.HTTPBadRequest(
-                    description=f"Option {option_name} is not permitted"
-                )
+                raise HTTPBadRequest(title=f"Option {option_name} is not permitted")
 
         options_ = {k: v.default_choice for k, v in GENERIC_OPTIONS.items()}
         options_.update(options)
@@ -362,13 +362,11 @@ class CupsPrintSystem(PrintSystem):
             elif file.content_type == "text/plain":
                 pass
             else:
-                raise falcon.HTTPBadRequest(
-                    description=f"Unknown file type: {file.content_type}"
-                )
+                raise HTTPBadRequest(title=f"Unknown file type: {file.content_type}")
         if content_type:
             options_["document-format"] = content_type
         if media_size:
-            options_['media'] = media_size.full_identifier
+            options_["media"] = media_size.full_identifier
 
         with ExitStack() as stack:
             tempfiles = []
@@ -393,8 +391,8 @@ class CupsPrintSystem(PrintSystem):
         while True:
             print_job = self.get_job(job_id)
             if print_job is None:
-                raise falcon.HTTPInternalServerError(
-                    description="Failed to get job attributes from CUPS"
+                raise HTTPInternalServerError(
+                    title="Failed to get job attributes from CUPS"
                 )
 
             waited_time = time.time() - start_time

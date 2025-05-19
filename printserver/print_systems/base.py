@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from dataclasses import dataclass
 
-import falcon
+from falcon import HTTPBadRequest
 from typing import Optional
 
 
@@ -43,9 +43,9 @@ class PrintOption:
 
 
 class SizeUnit(Enum):
-    POINTS = 'points'
-    INCHES = 'inches'
-    MILLIMETERS = 'mm'
+    POINTS = "points"
+    INCHES = "inches"
+    MILLIMETERS = "mm"
 
 
 @dataclass
@@ -55,7 +55,7 @@ class MediaSize:
     height: float
     units: SizeUnit
     full_identifier: str
-    
+
 
 @dataclass
 class PrinterDetails:
@@ -89,20 +89,20 @@ class PrinterSelector:
             print_system=selector.get("printSystem", None) or None,
         )
         if selector:
-            raise falcon.HTTPBadRequest(
-                description=f"Unknown printerSelector field: {', '.join(selector.keys())}"
+            raise HTTPBadRequest(
+                title=f"Unknown printerSelector field: {', '.join(selector.keys())}"
             )
         if result.name is not None and not isinstance(result.name, str):
-            raise falcon.HTTPBadRequest(
-                description=f"Invalid value for printerSelector.name: {result.name}"
+            raise HTTPBadRequest(
+                title=f"Invalid value for printerSelector.name: {result.name}"
             )
         if not isinstance(result.name_prefix, str):
-            raise falcon.HTTPBadRequest(
-                description=f"Invalid value for printerSelector.namePrefix: {result.name_prefix}"
+            raise HTTPBadRequest(
+                title=f"Invalid value for printerSelector.namePrefix: {result.name_prefix}"
             )
         if not isinstance(result.model_prefix, str):
-            raise falcon.HTTPBadRequest(
-                description=f"Invalid value for printerSelector.modelPrefix: {result.model_prefix}"
+            raise HTTPBadRequest(
+                title=f"Invalid value for printerSelector.modelPrefix: {result.model_prefix}"
             )
 
         from printserver.print_systems import all_print_systems
@@ -110,8 +110,8 @@ class PrinterSelector:
         system_names = [x.system_name() for x in all_print_systems]
 
         if result.print_system and result.print_system not in system_names:
-            raise falcon.HTTPBadRequest(
-                description=f"Invalid value for printerSelector.printSystem. Must be null, or one of {', '.join(system_names)}"
+            raise HTTPBadRequest(
+                title=f"Invalid value for printerSelector.printSystem. Must be null, or one of {', '.join(system_names)}"
             )
         return result
 

@@ -26,8 +26,9 @@ class IndexPage:
         printers_html = []
         for system in self.print_systems.supported_systems:
             for printer in system.get_printers(PrinterSelector()):
-                sizes_html = ''.join(
-                    "<option value='%(name)s'>%(name)s (%(width)s x %(height)s %(units)s)</option>" % dict(
+                sizes_html = "".join(
+                    "<option value='%(name)s'>%(name)s (%(width)s x %(height)s %(units)s)</option>"
+                    % dict(
                         name=escape(size.name),
                         width=float(size.width),
                         height=float(size.height),
