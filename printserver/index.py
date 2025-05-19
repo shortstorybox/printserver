@@ -113,7 +113,7 @@ class IndexPage:
                           ]
                       })
                   }).then(r=>r.json())
-                    .then(r=>alert(r.title || 'Submitted successfully.'))
+                    .then(r=>alert(r.title || r.warnings.join('\n') || 'Submitted successfully.'))
                     .catch(alert);
                 }
               </script>
@@ -162,7 +162,7 @@ class IndexPage:
         ]
     })
 }).then(r=>r.json())
-  .then(r=>alert(r.title || 'Submitted successfully.'))
+  .then(r=>alert(r.title || r.warnings.join('\n') || 'Submitted successfully.'))
   .catch(alert);</pre>
               <pre><span class="lang">curl</span><b style="user-select: none;">$ </b>curl %(api_base)s/printers</pre>
               <pre><span class="lang">curl</span><b style="user-select: none;">$ </b>curl %(api_base)s/print-job \
