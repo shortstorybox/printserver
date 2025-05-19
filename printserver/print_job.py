@@ -368,7 +368,7 @@ class ListPrintJobApi:
             "jobState": print_job.job_state.name.lower(),
             "jobStateReasons": print_job.job_state_reasons,
             # Report a warning for any options the printer doesn't support
-            "warnings": '\n'.join(warnings) or None,
+            "warnings": "\n".join(warnings) or None,
         }
 
 
