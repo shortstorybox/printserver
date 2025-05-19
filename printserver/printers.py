@@ -33,7 +33,7 @@ class ListPrintersApi:
                         key: {
                             "displayName": spec.display_name,
                             "defaultChoice": spec.default_choice,
-                            "choices": [{"name": x} for x in spec.choices],
+                            "choices": list(spec.choices),
                         }
                         for key, spec in sorted(printer.supported_options.items())
                     },
