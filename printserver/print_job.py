@@ -202,7 +202,7 @@ class ListPrintJobApi:
                 if units is SizeUnit.POINTS
                 else "mm"
                 if units is SizeUnit.MILLIMETERS
-                else "inches"
+                else "in"
                 if units is SizeUnit.INCHES
                 else None
             )
