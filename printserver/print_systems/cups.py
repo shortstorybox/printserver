@@ -159,11 +159,12 @@ class CupsPrintSystem(PrintSystem):
         options: dict[str, str],
     ) -> PrintJob:
         for file in files:
-            if not file.content_type.startswith(
-                "application/pdf"
-            ) and not file.content_type.startswith("image/") and not file.content_type.startswith(
-                "application/zpl"
-            ) and not file.content_type.startswith("text/zpl"):
+            if (
+                not file.content_type.startswith("application/pdf")
+                and not file.content_type.startswith("image/")
+                and not file.content_type.startswith("application/zpl")
+                and not file.content_type.startswith("text/zpl")
+            ):
                 raise falcon.HTTPBadRequest(
                     description=f"Unknown file type: {file.content_type}"
                 )
@@ -174,15 +175,17 @@ class CupsPrintSystem(PrintSystem):
                 f = stack.enter_context(NamedTemporaryFile())
                 f.write(file.content)
                 f.flush()
-                
-                if file.content_type.startswith("application/zpl") or file.content_type.startswith("text/zpl"):
+
+                if file.content_type.startswith(
+                    "application/zpl"
+                ) or file.content_type.startswith("text/zpl"):
                     # For ZPL files, we need to write them as raw text
                     # and potentially set CUPS options to handle raw printing
                     # Set raw printing option for ZPL files
                     if "raw" not in options:
                         options = options.copy()
                         options["raw"] = "true"
-                    
+
                 tempfiles.append(f)
             job_id = str(
                 self.conn.printFiles(
