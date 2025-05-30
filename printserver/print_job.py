@@ -127,7 +127,7 @@ class ListPrintJobApi:
                     map(repr, printer.supported_options[option].choices)
                 )
                 warnings.append(
-                    f"Printer does not support option {option}={repr(value)}'. "
+                    f"Printer {printer.name} does not support option {option}={repr(value)}'. "
                     f"Supported choices are: {supported_repr}"
                 )
         return warnings
@@ -356,8 +356,9 @@ class ListPrintJobApi:
         )
 
         logger.info(
-            "Print job %s state: %s (%s API call)",
+            "Print job %s files: %s state: %s (%s API call)",
             print_job.job_id,
+            len(downloaded_files),
             print_job.job_state.name,
             "async" if is_async else "synchronous",
         )

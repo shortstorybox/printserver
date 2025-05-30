@@ -329,6 +329,20 @@ class CupsPrintSystem(PrintSystem):
             job_state_reasons=reasons,
         )
 
+    def _is_zpl_content(self, content: bytes) -> bool:
+        """
+        Check if the content appears to be ZPL (Zebra Programming Language) data.
+        ZPL commands typically start with ^ (caret) or ~ (tilde).
+        """
+        try:
+            # Decode content to check for ZPL commands
+            text_content = content.decode('utf-8', errors='ignore')
+            # Check for common ZPL commands
+            zpl_commands = ['^XA', '^XZ', '^FO', '^BY', '^BC', '^FD', '^FS', '^CF', '^A0', '~SD']
+            return any(cmd in text_content for cmd in zpl_commands)
+        except Exception:
+            return False
+
     def print(
         self,
         printer: PrinterDetails,
@@ -361,8 +375,20 @@ class CupsPrintSystem(PrintSystem):
                 pass
             elif file.content_type == "text/plain":
                 pass
+            elif file.content_type in ["application/x-zpl", "application/zpl"]:
+                pass
+            elif file.content_type == "text/plain" and self._is_zpl_content(file.content):
+                # ZPL content sent as text/plain (common for ZPL files)
+                # Override content type to ensure raw printing
+                content_type = "application/vnd.cups-raw"
             else:
                 raise HTTPBadRequest(title=f"Unknown file type: {file.content_type}")
+        
+        # Handle ZPL content type mapping for CUPS
+        if content_type in ["application/x-zpl", "application/zpl"]:
+            # ZPL files should be sent as raw data to the printer
+            content_type = "application/vnd.cups-raw"
+        
         if content_type:
             options_["document-format"] = content_type
         if media_size:
