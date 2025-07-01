@@ -5,7 +5,7 @@ from logging import basicConfig, INFO
 from printserver import api, index_page, allowlist_middleware, AllowDomainMiddleware
 import argparse
 
-DEFAULT_PORT = 2888
+DEFAULT_PORT = 3888
 
 
 def main():
