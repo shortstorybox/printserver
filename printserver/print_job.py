@@ -162,13 +162,21 @@ class ListPrintJobApi:
             )
         if width is not None and height is not None:
             if not isinstance(width, (float, int)):
-                raise ValueError(f"Invalid type for mediaSize.width: {type(width)}, only float and int are allowed")
+                raise ValueError(
+                    f"Invalid type for mediaSize.width: {type(width)}, only float and int are allowed"
+                )
             if not isinstance(height, (float, int)):
-                raise ValueError(f"Invalid type for mediaSize.height: {type(height)}, only float and int are allowed")
+                raise ValueError(
+                    f"Invalid type for mediaSize.height: {type(height)}, only float and int are allowed"
+                )
             if width <= 0 or not isfinite(width):
-                raise ValueError(f"Invalid value for mediaSize.width: {width}, must be positive and finite")
+                raise ValueError(
+                    f"Invalid value for mediaSize.width: {width}, must be positive and finite"
+                )
             if height <= 0 or not isfinite(height):
-                raise ValueError(f"Invalid value for mediaSize.height: {height}, must be positive and finite")
+                raise ValueError(
+                    f"Invalid value for mediaSize.height: {height}, must be positive and finite"
+                )
             width = float(width)
             height = float(height)
 
