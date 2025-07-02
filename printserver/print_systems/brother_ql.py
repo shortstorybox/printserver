@@ -1,4 +1,5 @@
 from typing import Optional
+from threading import Lock
 import usb.core
 from printserver.print_systems.base import (
     PrintSystem,
@@ -18,6 +19,9 @@ from usb.core import NoBackendError
 from falcon import HTTPBadRequest
 import pdf2image
 from PIL import Image, ImageOps
+
+# Access to pyusb must be serialized to prevent GIL errors
+brother_lock = Lock()
 
 
 class BrotherQLPrintSystem(PrintSystem):
@@ -56,7 +60,8 @@ class BrotherQLPrintSystem(PrintSystem):
     def is_supported(cls) -> bool:
         """Check if Brother QL is supported"""
         try:
-            usb.core.find()
+            with brother_lock:
+                usb.core.find()
         except NoBackendError:
             # To use non-Cups Brother QL USB printers, install libusb:
             #  - Debian/Ubuntu: sudo apt-get install libusb-1.0-0
@@ -71,7 +76,8 @@ class BrotherQLPrintSystem(PrintSystem):
 
     def get_printers(self, printer_selector: PrinterSelector) -> list[PrinterDetails]:
         """Return the list of available CUPS printers that match the given selector"""
-        printers = self.brother_ql.backends.helpers.discover("pyusb")
+        with brother_lock:
+            printers = self.brother_ql.backends.helpers.discover("pyusb")
 
         results = []
         for printer in printers:
@@ -93,6 +99,7 @@ class BrotherQLPrintSystem(PrintSystem):
                         printer_state=PrinterState.IDLE,
                         state_reasons=[],
                         print_system=self.system_name(),
+                        default_media_size="103x164",
                         media_sizes=[
                             MediaSize(
                                 name="103x164",
@@ -102,7 +109,7 @@ class BrotherQLPrintSystem(PrintSystem):
                                 full_identifier="custom_103x164mm_103x164mm",
                             )
                         ],
-                        supported_options={},
+                        supported_options=[],
                     )
                 )
         return results
@@ -141,12 +148,16 @@ class BrotherQLPrintSystem(PrintSystem):
         instructions = self.brother_ql.conversion.convert(
             qlr=raster, images=pages, label=self.LABEL.identifier, cut=True, hq=True
         )
-        result = self.brother_ql.backends.helpers.send(
-            instructions=instructions,
-            printer_identifier=printer.identifier,
-            backend_identifier="pyusb",
-            blocking=not is_async,
-        )
+        with brother_lock:
+            result = self.brother_ql.backends.helpers.send(
+                instructions=instructions,
+                printer_identifier=printer.identifier,
+                backend_identifier="pyusb",
+                # FIXME: Blocking inside of brother_lock is not ideal, since it
+                # means that future API calls to /printers and /print-job will stall
+                # until printing is complete.
+                blocking=not is_async,
+            )
         if is_async:
             return PrintJob(job_id="", job_state=JobState.PENDING, job_state_reasons=[])
         elif result.get("did_print"):
