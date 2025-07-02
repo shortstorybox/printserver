@@ -161,25 +161,14 @@ class ListPrintJobApi:
                 "mediaSize.units should be specified along with mediaSize.width/mediaSize.height"
             )
         
-        # Convert width and height to float if they are strings
         if width is not None:
-            if isinstance(width, str):
-                try:
-                    width = float(width)
-                except ValueError:
-                    raise ValueError(f"Invalid value for mediaSize.width: {width}")
-            elif not isinstance(width, (int, float)):
-                raise ValueError(f"Invalid value for mediaSize.width: {width}")
+            if not isinstance(width, (int, float, str)):
+                raise ValueError(f"Invalid type for mediaSize.width: {width}, {type(width)}")
             width = float(width)
             
         if height is not None:
-            if isinstance(height, str):
-                try:
-                    height = float(height)
-                except ValueError:
-                    raise ValueError(f"Invalid value for mediaSize.height: {height}")
-            elif not isinstance(height, (int, float)):
-                raise ValueError(f"Invalid value for mediaSize.height: {height}")
+            if not isinstance(height, (int, float, str)):
+                raise ValueError(f"Invalid type for mediaSize.height: {height}, {type(height)}")
             height = float(height)
 
         if width is not None and height is not None:
