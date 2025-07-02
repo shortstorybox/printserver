@@ -37,9 +37,10 @@ class PrintJob:
 
 @dataclass
 class PrintOption:
-    display_name: str
+    keyword: str
     default_choice: Optional[str]
     choices: list[str]
+    display_name: str
 
 
 class SizeUnit(Enum):
@@ -65,8 +66,9 @@ class PrinterDetails:
     printer_state: PrinterState
     state_reasons: list[str]
     print_system: str
+    default_media_size: str  # this MUST match the name of one of the media_sizes
     media_sizes: list[MediaSize]
-    supported_options: dict[str, PrintOption]
+    supported_options: list[PrintOption]
 
 
 @dataclass
@@ -94,26 +96,28 @@ class PrinterSelector:
             )
         if result.name is not None and not isinstance(result.name, str):
             raise HTTPBadRequest(
-                title=f"Invalid value for printerSelector.name: {result.name}"
+                title=f"Invalid value for printerSelector[name]: {result.name}"
             )
         if not isinstance(result.name_prefix, str):
             raise HTTPBadRequest(
-                title=f"Invalid value for printerSelector.namePrefix: {result.name_prefix}"
+                title=f"Invalid value for printerSelector[namePrefix]: {result.name_prefix}"
             )
         if not isinstance(result.model_prefix, str):
             raise HTTPBadRequest(
-                title=f"Invalid value for printerSelector.modelPrefix: {result.model_prefix}"
+                title=f"Invalid value for printerSelector[modelPrefix]: {result.model_prefix}"
             )
+        PrinterSelector.validate_print_system(result.print_system)
+        return result
 
+    @staticmethod
+    def validate_print_system(print_system) -> None:
         from printserver.print_systems import all_print_systems
 
         system_names = [x.system_name() for x in all_print_systems]
-
-        if result.print_system and result.print_system not in system_names:
+        if print_system and print_system not in system_names:
             raise HTTPBadRequest(
-                title=f"Invalid value for printerSelector.printSystem. Must be null, or one of {', '.join(system_names)}"
+                title=f"Invalid value for printerSelector[printSystem]. Must be null, or one of {', '.join(system_names)}"
             )
-        return result
 
 
 class PrintSystem(ABC):

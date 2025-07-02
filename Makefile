@@ -27,6 +27,8 @@ lint: .setup
 	 uv run ruff format --quiet --check printserver/ || ( \
 	     echo '\n❌ Formatting issues found. Consider running `make fix`.' >&2; exit 1)
 	@uv run pyright --warnings --level warning printserver/
+	@!(grep -RIni --color=auto '[X]XX\|[D]O NOT MERGE\|[D]O NOT SUBMIT' printserver/ && \
+	   echo '\n❌ Found unresolved comments.')
 
 .PHONY: fix
 fix: .setup
@@ -34,6 +36,8 @@ fix: .setup
 	uv run ruff check --quiet --fix printserver/
 	uv run ruff format --quiet printserver/
 	uv run pyright --warnings --level warning printserver/
+	@!(grep -RIni --color=auto '[X]XX\|[D]O NOT MERGE\|[D]O NOT SUBMIT' printserver/ && \
+	   echo '\n❌ Found unresolved comments.')
 
 .PHONY: clean
 clean:
