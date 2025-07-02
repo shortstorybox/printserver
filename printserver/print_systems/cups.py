@@ -1,4 +1,5 @@
 import re
+from threading import Lock
 from printserver.print_systems.base import (
     PrintSystem,
     PrinterSelector,
@@ -18,100 +19,103 @@ from tempfile import NamedTemporaryFile
 import time
 
 from falcon import HTTPInternalServerError, HTTPBadRequest
-import cups
+from cups import Connection, IPPError, PPD, IPP_NOT_FOUND, IPP_NOT_AUTHORIZED
 from typing import Optional
 
 
 # CUPS-specific options that are not printer-specific
-GENERIC_OPTIONS = {
-    "copies": PrintOption(
+GENERIC_OPTIONS = [
+    PrintOption(
+        keyword="copies",
         display_name="Number of Copies",
         default_choice="1",
         choices=[str(x) for x in range(1, 101)],
     ),
-    "collate": PrintOption(
+    PrintOption(
+        keyword="collate",
         display_name="Collate Copies",
         default_choice="false",
         choices=["true", "false"],
     ),
-    "fit-to-page": PrintOption(  # Shorthand for print-scaling=fill
+    PrintOption(  # Shorthand for print-scaling=fill
+        keyword="fit-to-page",
         display_name="Scale to Fill Page",
         default_choice="false",
         choices=["true", "false"],
     ),
-    "mirror": PrintOption(
+    PrintOption(
+        keyword="mirror",
         display_name="Flip Horizontally",
         default_choice="false",
         choices=["true", "false"],
     ),
-    "landscape": PrintOption(
+    PrintOption(
+        keyword="landscape",
         display_name="Landscape",
         default_choice="false",
         choices=["true", "false"],
     ),
-    "outputorder": PrintOption(
+    PrintOption(
+        keyword="outputorder",
         display_name="Sheet Order",
         default_choice="normal",
         choices=["normal", "reverse"],
     ),
-    "page-border": PrintOption(
+    PrintOption(
+        keyword="page-border",
         display_name="Border",
         default_choice="none",
         choices=["none", "single", "single-thick", "double", "double-thick"],
     ),
-    "number-up": PrintOption(
+    PrintOption(
+        keyword="number-up",
         display_name="Pages per Sheet",
         default_choice="1",
         choices=["1", "2", "4", "6", "9", "16"],
     ),
-    "number-up-layout": PrintOption(
+    PrintOption(
+        keyword="number-up-layout",
         display_name="Layout Direction",
         default_choice="lrtb",
         choices=["lrtb", "btlr", "btrl", "lrbt", "rlbt", "rltb", "tblr", "tbrl"],
     ),
-    "print-scaling": PrintOption(
+    PrintOption(
+        keyword="print-scaling",
         display_name="Scale to Fit Paper Size",
         default_choice="none",
         choices=["auto", "auto-fit", "fill", "fit", "none"],
     ),
-    "job-sheets": PrintOption(
-        display_name="Banner/Trailer Page",
-        default_choice="none,none",
-        choices=[
-            "none,none",
-            "classified,none",
-            "confidential,none",
-            "secret,none",
-            "standard,none",
-            "topsecret,none",
-            "unclassified,none",
-            "none,classified",
-            "none,confidential",
-            "none,secret",
-            "none,standard",
-            "none,topsecret",
-            "none,unclassified",
-        ],
+    PrintOption(
+        keyword="raw",
+        display_name="Send Raw Data",
+        default_choice="false",
+        choices=["true", "false"],
     ),
-}
+]
 
 # CUPS-specific options that are disallowed for security
-DISALLOWED_GENERIC_OPTIONS = {
+DISALLOWED_OPTIONS = {
     "job-priority",
     "job-hold-until",
     "job-cancel-after",
     "notify-lease-duration",
     "notify-events",
-    "media",  # Use the top-level mediaSize param instead
+    "media",  # Use the top-level media.size param instead
+    "PageSize",  # Deprecated PPD-only. Use top-level media.size param instead.
+    "PageRegion",  # Deprecated PPD-only, even more out-of-date than PageSize.
     "document-format",  # Filled automatically
     "prettyprint",  # Deprecated, and only works for text-only files
     "orientation-requested",  # Use "landscape" option instead
 }
 
+# Access to the cups C library is serialized by a lock to prevent GIL errors
+cups_lock = Lock()
+
 
 class CupsPrintSystem(PrintSystem):
     def __init__(self):
-        self.conn = cups.Connection()
+        with cups_lock:
+            self.conn = Connection()
 
     @classmethod
     def system_name(cls) -> str:
@@ -123,23 +127,34 @@ class CupsPrintSystem(PrintSystem):
         if os.name != "posix":
             return False
         try:
-            cups.Connection().getPrinters()
-        except cups.IPPError:
+            with cups_lock:
+                Connection().getPrinters()
+        except IPPError:
             return False
         return True
 
     def get_printers(self, printer_selector: PrinterSelector) -> list[PrinterDetails]:
         """Return the list of available CUPS printers that match the given selector"""
-        printers = self.conn.getPrinters()
+        with cups_lock:
+            printers = self.conn.getPrinters()
         results = []
         for printer_name, printer in printers.items():
+            if "offline-report" in printer["printer-state-reasons"]:
+                continue
             if PrinterState(printer["printer-state"]) not in [
                 PrinterState.IDLE,
                 PrinterState.PROCESSING,
             ]:
-                continue
-            if "offline-report" in printer["printer-state-reasons"]:
-                continue
+                if (
+                    PrinterState(printer["printer-state"]) == PrinterState.STOPPED
+                    and "paused" in printer["printer-state-reasons"]
+                ):
+                    # The only reason the printer is paused is because CUPS
+                    # disabled it. This is usually recoverable, so we allow
+                    # it to be used.
+                    pass
+                else:
+                    continue
             if not printer["printer-make-and-model"].lower().startswith(
                 printer_selector.model_prefix.lower()
             ) or not printer["printer-info"].lower().startswith(
@@ -147,10 +162,11 @@ class CupsPrintSystem(PrintSystem):
             ):
                 continue
 
-            supported_options = {}
+            supported_options = []
 
             # Parse IPP options
-            ipp_attributes = self.conn.getPrinterAttributes(printer_name)
+            with cups_lock:
+                ipp_attributes = self.conn.getPrinterAttributes(printer_name)
             job_attributes = [
                 key
                 for key in ipp_attributes.get("job-creation-attributes-supported", [])
@@ -183,26 +199,33 @@ class CupsPrintSystem(PrintSystem):
                 parsed_choices = [
                     self.parse_ipp_attribute(option_name, x) for x in choices
                 ]
-                if default_choice and default_choice not in parsed_choices:
-                    parsed_choices = [default_choice] + parsed_choices
+                if default_choice not in parsed_choices:
+                    default_choice = None
                 if not parsed_choices:
                     continue  # Skip options that are missing a spec
-                supported_options[option_name] = PrintOption(
-                    display_name=option_name.replace("-", " ")
-                    .replace("_", " ")
-                    .capitalize(),
-                    default_choice=default_choice,
-                    choices=parsed_choices,
+                display_name = re.sub(
+                    r"([a-z])([A-Z])",
+                    r"\1 \2",
+                    option_name.replace("-", " ").replace("_", " "),
+                ).title()
+                supported_options.append(
+                    PrintOption(
+                        keyword=option_name,
+                        default_choice=default_choice,
+                        choices=parsed_choices,
+                        display_name=display_name,
+                    )
                 )
 
             # Parse PPD options
             try:
-                ppd_file = self.conn.getPPD(printer_name)
-            except cups.IPPError:
+                with cups_lock:
+                    ppd_file = self.conn.getPPD(printer_name)
+            except IPPError:
                 ppd_file = None
             if ppd_file:
                 try:
-                    ppd = cups.PPD(ppd_file)
+                    ppd = PPD(ppd_file)
                 except RuntimeError:
                     ppd = None
                 if ppd:
@@ -215,23 +238,38 @@ class CupsPrintSystem(PrintSystem):
                             choices = [x["choice"] for x in option.choices]
                             if default_choice and default_choice not in choices:
                                 choices = [default_choice] + choices
-                            supported_options[option.keyword] = PrintOption(
-                                display_name=option.text,
-                                default_choice=default_choice,
-                                choices=choices,
+                            supported_options.append(
+                                PrintOption(
+                                    keyword=option.keyword,
+                                    default_choice=default_choice,
+                                    choices=choices,
+                                    display_name=option.text,
+                                )
                             )
 
-            supported_options.update(GENERIC_OPTIONS)  # Non-printer-specific options
-            for option_name in DISALLOWED_GENERIC_OPTIONS:
-                supported_options.pop(option_name, None)
+            supported_options.extend(GENERIC_OPTIONS)
+
+            # Remove duplicates and disallowed options, while retaining the
+            # same ordering. Only keep the first occurrence of each option.
+            exclude = set(DISALLOWED_OPTIONS)
+            supported_options_dedupe = []
+            for option in supported_options:
+                if option.keyword not in exclude:
+                    exclude.add(option.keyword)
+                    supported_options_dedupe.append(option)
+
+            # Default media size
+            default_media_identifier = ipp_attributes.get("media-default")
+            default_media_size = None  # This value is determened futher below
 
             # Parse supported media sizes
             media_sizes = []
-            media_names = ipp_attributes.get("media-supported") or []
-            for media_id in media_names:
-                if not re.match(r"^[^_]*_[^_]*_[^_]*$", media_id):
+            media_identifiers = ipp_attributes.get("media-supported") or []
+            size_names = set()
+            for identifier in media_identifiers:
+                if not re.match(r"^[^_]*_[^_]*_[^_]*$", identifier):
                     continue
-                world_region, size_name, dimensions = media_id.split("_")
+                world_region, size_name, dimensions = identifier.split("_")
                 dimensions = dimensions.lower()
                 if dimensions.endswith("in"):
                     dimensions = dimensions[:-2]
@@ -244,15 +282,35 @@ class CupsPrintSystem(PrintSystem):
                 if not re.match(r"^[0-9]*[.]?[0-9]+x[0-9]*[.]?[0-9]+$", dimensions):
                     continue
                 width, height = dimensions.split("x")
+                if identifier == default_media_identifier:
+                    default_media_size = size_name
+                if size_name in size_names:
+                    continue  # Duplicate size
                 media_sizes.append(
                     MediaSize(
                         name=size_name,
                         width=float(width),
                         height=float(height),
                         units=units,
-                        full_identifier=media_id,
+                        full_identifier=identifier,
                     )
                 )
+            if len(media_sizes) == 0:
+                # No valid media sizes found. To prevent unexpected behavior, we
+                # fall back on making at least one size available.
+                media_sizes = [
+                    MediaSize(
+                        name="letter",
+                        width=8.5,
+                        height=11,
+                        units=SizeUnit.INCHES,
+                        full_identifier="na_letter_8.5x11in",
+                    )
+                ]
+            if not default_media_size:
+                # No default media size found. Use the first one as a fallback
+                # to prevent unexpected behavior.
+                default_media_size = media_sizes[0].name
 
             results.append(
                 PrinterDetails(
@@ -262,8 +320,9 @@ class CupsPrintSystem(PrintSystem):
                     printer_state=PrinterState(printer["printer-state"]),
                     state_reasons=printer["printer-state-reasons"],
                     print_system=self.system_name(),
+                    default_media_size=default_media_size,
                     media_sizes=media_sizes,
-                    supported_options=supported_options,
+                    supported_options=supported_options_dedupe,
                 )
             )
 
@@ -300,10 +359,11 @@ class CupsPrintSystem(PrintSystem):
             return None
         cups_job_id = int(job_id)
         try:
-            job_attributes = self.conn.getJobAttributes(cups_job_id)
-        except cups.IPPError as e:
+            with cups_lock:
+                job_attributes = self.conn.getJobAttributes(cups_job_id)
+        except IPPError as e:
             code, reason = e.args
-            if code == cups.IPP_NOT_FOUND:
+            if code == IPP_NOT_FOUND:
                 return None  # Job does not exist, or has expired
             raise HTTPInternalServerError(
                 title=f"Failed to get job attributes from CUPS: {e}"
@@ -342,10 +402,14 @@ class CupsPrintSystem(PrintSystem):
             raise ValueError()
 
         for option_name in options:
-            if option_name in DISALLOWED_GENERIC_OPTIONS:
+            if option_name in DISALLOWED_OPTIONS:
                 raise HTTPBadRequest(title=f"Option {option_name} is not permitted")
 
-        options_ = {k: v.default_choice for k, v in GENERIC_OPTIONS.items()}
+        options_ = {
+            spec.keyword: spec.default_choice
+            for spec in printer.supported_options
+            if spec.default_choice and spec.default_choice in spec.choices
+        }
         options_.update(options)
 
         content_type = re.sub(r";.*", "", files[0].content_type)
@@ -368,6 +432,24 @@ class CupsPrintSystem(PrintSystem):
         if media_size:
             options_["media"] = media_size.full_identifier
 
+        # If the printer is disabled, we need CUPS to enable it prior to use
+        if (
+            printer.printer_state == PrinterState.STOPPED
+            and "paused" in printer.state_reasons
+        ):
+            try:
+                with cups_lock:
+                    self.conn.enablePrinter(printer.identifier)
+            except IPPError as e:
+                code, reason = e.args
+                if code == IPP_NOT_AUTHORIZED:
+                    raise HTTPBadRequest(
+                        title=f"Printer {printer.name} is paused and cannot be enabled"
+                    )
+                raise HTTPInternalServerError(
+                    title=f"Printer {printer.name} is paused and could not be re-enabled: {e}"
+                )
+
         with ExitStack() as stack:
             tempfiles = []
             for file in files:
@@ -375,14 +457,15 @@ class CupsPrintSystem(PrintSystem):
                 f.write(file.content)
                 f.flush()
                 tempfiles.append(f)
-            job_id = str(
-                self.conn.printFiles(
-                    printer.identifier,
-                    [f.name for f in tempfiles],
-                    job_title,
-                    options_,
+            with cups_lock:
+                job_id = str(
+                    self.conn.printFiles(
+                        printer.identifier,
+                        [f.name for f in tempfiles],
+                        job_title,
+                        options_,
+                    )
                 )
-            )
 
         # Wait for up to 30 seconds for the job to complete
         start_time = time.time()
