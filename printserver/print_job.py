@@ -162,10 +162,10 @@ class ListPrintJobApi:
             )
         if width is not None and height is not None:
             if (
-                not isinstance(width, float)
+                not (isinstance(width, float) or isinstance(width, int))
                 or width <= 0
                 or not isfinite(width)
-                or not isinstance(height, float)
+                or not (isinstance(height, float) or isinstance(height, int))
                 or height <= 0
                 or not isfinite(height)
             ):
@@ -177,11 +177,11 @@ class ListPrintJobApi:
         elif not isinstance(units_param, str):
             raise ValueError(f"Invalid value for mediaSize.units: {repr(units_param)}")
         else:
-            if units_param in SizeUnit.__members__:
-                units = SizeUnit[units_param]
-            else:
+            try:
+                units = SizeUnit(units_param.lower())
+            except ValueError:
                 raise ValueError(
-                    f"Invalid value for mediaSize.units: {repr(units_param)}"
+                    f"Invalid value for mediaSize.units: {repr(units_param)}. Must be one of: {', '.join([unit.value for unit in SizeUnit])}"
                 )
 
         for x in printer.media_sizes:
