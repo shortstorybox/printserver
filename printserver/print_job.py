@@ -188,9 +188,9 @@ class ListPrintJobApi:
         elif not isinstance(units_param, str):
             raise ValueError(f"Invalid value for mediaSize.units: {repr(units_param)}")
         else:
-            try:
-                units = SizeUnit(units_param.lower())
-            except ValueError:
+            if units_param.upper() in SizeUnit.__members__:
+                units = SizeUnit[units_param.upper()]
+            else:
                 raise ValueError(
                     f"Invalid value for mediaSize.units: {repr(units_param)}. Must be one of: {', '.join([unit.value for unit in SizeUnit])}"
                 )
