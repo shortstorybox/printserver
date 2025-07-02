@@ -160,6 +160,28 @@ class ListPrintJobApi:
             raise ValueError(
                 "mediaSize.units should be specified along with mediaSize.width/mediaSize.height"
             )
+        
+        # Convert width and height to float if they are strings
+        if width is not None:
+            if isinstance(width, str):
+                try:
+                    width = float(width)
+                except ValueError:
+                    raise ValueError(f"Invalid value for mediaSize.width: {width}")
+            elif not isinstance(width, (int, float)):
+                raise ValueError(f"Invalid value for mediaSize.width: {width}")
+            width = float(width)
+            
+        if height is not None:
+            if isinstance(height, str):
+                try:
+                    height = float(height)
+                except ValueError:
+                    raise ValueError(f"Invalid value for mediaSize.height: {height}")
+            elif not isinstance(height, (int, float)):
+                raise ValueError(f"Invalid value for mediaSize.height: {height}")
+            height = float(height)
+
         if width is not None and height is not None:
             if (
                 not isinstance(width, float)
@@ -177,11 +199,11 @@ class ListPrintJobApi:
         elif not isinstance(units_param, str):
             raise ValueError(f"Invalid value for mediaSize.units: {repr(units_param)}")
         else:
-            if units_param in SizeUnit.__members__:
-                units = SizeUnit[units_param]
+            if units_param.upper() in SizeUnit.__members__:
+                units = SizeUnit[units_param.upper()]
             else:
                 raise ValueError(
-                    f"Invalid value for mediaSize.units: {repr(units_param)}"
+                    f"Invalid value for mediaSize.units: {repr(units_param)}. Must be one of: {', '.join([unit.value for unit in SizeUnit])}"
                 )
 
         for x in printer.media_sizes:
