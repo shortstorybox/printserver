@@ -163,16 +163,18 @@ class ListPrintJobApi:
             )
         if width is not None and height is not None:
             if (
-                not isinstance(width, float)
+                not isinstance(width, (float, int))
                 or width <= 0
                 or not isfinite(width)
-                or not isinstance(height, float)
+                or not isinstance(height, (float, int))
                 or height <= 0
                 or not isfinite(height)
             ):
                 raise ValueError(
                     f"Invalid value for media[size][width]/media[size][height]: {width}/{height}"
                 )
+            width = float(width) # if int, convert to float
+            height = float(height) # if int, convert to float
         if units is None:
             units_enum = None
         elif not isinstance(units, str):
