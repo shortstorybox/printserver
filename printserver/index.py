@@ -192,6 +192,8 @@ class IndexPage:
                 }
                 function printFile(form) {
                   const warnings = form.querySelector('.warnings');
+                  warnings.innerText = '';
+
                   const printJob = form.querySelector('.print-job');
                   printJob.style.display = 'none';
                   printJob.querySelector('.job-status').innerText = '';
