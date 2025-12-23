@@ -152,7 +152,7 @@ class CupsPrintSystem(PrintSystem):
 
             if (
                 printer_selector.name
-                and printer_name.lower() != printer_selector.name.lower()
+                and printer["printer-info"].lower() != printer_selector.name.lower()
             ):
                 continue
 
