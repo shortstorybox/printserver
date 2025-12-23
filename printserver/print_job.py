@@ -366,11 +366,11 @@ class ListPrintJobApi:
             raise HTTPBadRequest(
                 title=f"Invalid value for media[size][name]: {media_size_name}"
             )
-        if not isinstance(media_width, (float, type(None))):
+        if not isinstance(media_width, (float, int, type(None))):
             raise HTTPBadRequest(
                 title=f"Invalid value for media[size][width]: {media_width}"
             )
-        if not isinstance(media_height, (float, type(None))):
+        if not isinstance(media_height, (float, int, type(None))):
             raise HTTPBadRequest(
                 title=f"Invalid value for media[size][height]: {media_height}"
             )
