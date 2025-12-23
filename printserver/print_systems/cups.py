@@ -85,12 +85,6 @@ GENERIC_OPTIONS = [
         default_choice="none",
         choices=["auto", "auto-fit", "fill", "fit", "none"],
     ),
-    PrintOption(
-        keyword="raw",
-        display_name="Send Raw Data",
-        default_choice="false",
-        choices=["true", "false"],
-    ),
 ]
 
 # CUPS-specific options that are disallowed for security
