@@ -57,8 +57,6 @@ class IndexPage:
                     <form class="printer" onsubmit="event.preventDefault(); printFile(this)">
                       <input type="hidden" name="printerSelector[name]" value="%(name)s" />
                       <input type="hidden" name="printerSelector[printSystem]" value="%(print_system)s" />
-                      <input type="hidden" name="printerSelector[namePrefix]" value="%(name)s" />
-                      <input type="hidden" name="printerSelector[modelPrefix]" value="%(model)s" />
 
                       <h2>%(name)s</h2>
                       <p><b>Name:</b> %(name)s</p>

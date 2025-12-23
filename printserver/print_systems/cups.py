@@ -149,11 +149,21 @@ class CupsPrintSystem(PrintSystem):
                     pass
                 else:
                     continue
-            if not printer["printer-make-and-model"].lower().startswith(
-                printer_selector.model_prefix.lower()
-            ) or not printer["printer-info"].lower().startswith(
-                printer_selector.name_prefix.lower()
+
+            if (
+                printer_selector.name
+                and printer_name.lower() != printer_selector.name.lower()
             ):
+                continue
+
+            if printer_selector.model_prefix and not printer[
+                "printer-make-and-model"
+            ].lower().startswith(printer_selector.model_prefix.lower()):
+                continue
+
+            if printer_selector.name_prefix and not printer[
+                "printer-info"
+            ].lower().startswith(printer_selector.name_prefix.lower()):
                 continue
 
             supported_options = []
