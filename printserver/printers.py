@@ -1,5 +1,4 @@
 from .print_systems.base import PrinterSelector
-from falcon import HTTPNotFound
 from .print_systems import PrintSystemProvider
 
 
@@ -14,11 +13,9 @@ class ListPrintersApi:
         for system in self.print_systems.supported_systems:
             printers.extend(system.get_printers(printer_selector))
         response.media = {
-            "printers": [GetPrinterApi.printer_to_json(printer) for printer in printers]
+            "printers": [self.printer_to_json(printer) for printer in printers]
         }
 
-
-class GetPrinterApi:
     @staticmethod
     def printer_to_json(printer):
         return {
@@ -49,21 +46,3 @@ class GetPrinterApi:
                 for i, spec in enumerate(printer.supported_options)
             },
         }
-
-    def on_get(self, printer_id, request, response):
-        printer = None
-        system_name, _, identifier = printer_id.partition(":")
-        for system in self.print_systems.supported_systems:
-            if system_name == system.system_name:
-                system = system
-                break
-        else:
-            raise HTTPNotFound(
-                title=f"No print system named {system_name} is enabled",
-            )
-        printer = system.get_printer(identifier)
-        if printer is None:
-            raise HTTPNotFound(
-                title=f"No active printer with id: {printer_id}",
-            )
-        response.media = self.printer_to_json(printer)
