@@ -85,12 +85,6 @@ GENERIC_OPTIONS = [
         default_choice="none",
         choices=["auto", "auto-fit", "fill", "fit", "none"],
     ),
-    PrintOption(
-        keyword="raw",
-        display_name="Send Raw Data",
-        default_choice="false",
-        choices=["true", "false"],
-    ),
 ]
 
 # CUPS-specific options that are disallowed for security
@@ -155,11 +149,21 @@ class CupsPrintSystem(PrintSystem):
                     pass
                 else:
                     continue
-            if not printer["printer-make-and-model"].lower().startswith(
-                printer_selector.model_prefix.lower()
-            ) or not printer["printer-info"].lower().startswith(
-                printer_selector.name_prefix.lower()
+
+            if (
+                printer_selector.name
+                and printer["printer-info"].lower() != printer_selector.name.lower()
             ):
+                continue
+
+            if printer_selector.model_prefix and not printer[
+                "printer-make-and-model"
+            ].lower().startswith(printer_selector.model_prefix.lower()):
+                continue
+
+            if printer_selector.name_prefix and not printer[
+                "printer-info"
+            ].lower().startswith(printer_selector.name_prefix.lower()):
                 continue
 
             supported_options = []

@@ -35,7 +35,6 @@ class GetPrinterApi:
                     "width": size.width,
                     "height": size.height,
                     "units": size.units.value,
-                    "display_name": size.display_name,
                 }
                 for size in printer.media_sizes
             ],
