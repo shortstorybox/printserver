@@ -80,7 +80,7 @@ class IndexPage:
                       <!-- file input -->
                       <p>
                         <b>File:</b>
-                        <input type="file" name="files" accept="application/pdf" multiple required />
+                        <input type="file" name="files" accept="application/pdf, image/png" multiple required />
                       </p>
                       <p>
                         <button>Print</button>
