@@ -173,8 +173,8 @@ class ListPrintJobApi:
                 raise ValueError(
                     f"Invalid value for media[size][width]/media[size][height]: {width}/{height}"
                 )
-            width = float(width) # if int, convert to float
-            height = float(height) # if int, convert to float
+            width = float(width)  # if int, convert to float
+            height = float(height)  # if int, convert to float
         if units is None:
             units_enum = None
         elif not isinstance(units, str):
