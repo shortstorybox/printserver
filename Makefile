@@ -72,8 +72,11 @@ dist/PrintServer.pkg: build/signed.pkg | signing-keys
 	@echo Running notarytool...
 	@xcrun notarytool history --keychain-profile 'notary-profile' &>/dev/null || (\
 	   echo '\n❌ Notarization Profile not found. To create it:\n' \
-	      '    1. Create an App-Specific Password: https://account.apple.com/account/manage' \
-	      "    2. Store your notary-profile by running: xcrun notarytool store-credentials 'notary-profile' --team-id=$(CERT_TEAM_ID) --apple-id=<your-email-address>\n" >&2; \
+	      '    1. Create an App-Specific Password: https://account.apple.com/account/manage\n' \
+          '       For security, DO NOT SAVE IT ANYWHERE -- not even in your password manager.\n' \
+          '       It is to be used for the next step, only.\n' \
+	      '    2. Store your notary-profile by running:\n' \
+          "       $ xcrun notarytool store-credentials 'notary-profile' --team-id=$(CERT_TEAM_ID) --apple-id=<your-email-address>\n\n" >&2; \
 	   exit 1)
 	@xcrun notarytool submit dist/PrintServer.pkg --keychain-profile 'notary-profile' --wait
 	xcrun stapler staple dist/PrintServer.pkg
