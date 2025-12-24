@@ -123,7 +123,7 @@ class IndexPage:
             virtual_printer_html = """
                 <a href="https://github.com/rodyager/RWTS-PDFwriter/releases/latest">RWTS-PDFWriter</a>
                 or <code>brew install rwts-pdfwriter</code>, which saves
-                printed files to /private/var/spool/pdfwriter/
+                printed files to <code>/private/var/spool/pdfwriter/</code>
             """
         elif os_name == "Windows":
             virtual_printer_html = """
