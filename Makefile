@@ -6,7 +6,6 @@ CERT_TEAM_ID := PD7WK7PS94
 CERT_TEAM_NAME := Short Story, Inc.
 CERT_APPLICATION := Developer ID Application: $(CERT_TEAM_NAME) ($(CERT_TEAM_ID))
 CERT_INSTALLER := Developer ID Installer: $(CERT_TEAM_NAME) ($(CERT_TEAM_ID))
-COMPANY_DOMAIN := shortstorybox.com
 .DELETE_ON_ERROR: # Delete targets if any command fails
 
 .PHONY: all
@@ -74,7 +73,7 @@ dist/PrintServer.pkg: build/signed.pkg | signing-keys
 	@xcrun notarytool history --keychain-profile 'notary-profile' &>/dev/null || (\
 	   echo '\n❌ Notarization Profile not found. To create it:\n' \
 	      '    1. Create an App-Specific Password: https://account.apple.com/account/manage' \
-	      "    2. Store your notary-profile by running: xcrun notarytool store-credentials 'notary-profile' --apple-id='$$(whoami)@$(COMPANY_DOMAIN)' --team-id=$(CERT_TEAM_ID)\n" >&2; \
+	      "    2. Store your notary-profile by running: xcrun notarytool store-credentials 'notary-profile' --team-id=$(CERT_TEAM_ID) --apple-id=<your-email-address>\n" >&2; \
 	   exit 1)
 	@xcrun notarytool submit dist/PrintServer.pkg --keychain-profile 'notary-profile' --wait
 	xcrun stapler staple dist/PrintServer.pkg
