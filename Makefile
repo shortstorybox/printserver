@@ -105,8 +105,9 @@ warn-uncommitted-diffs:
 signing-keys:
 	@security find-identity -v -p codesigning|grep -q '$(CERT_APPLICATION)' && \
 	 security find-identity -v -p basic|grep -q '$(CERT_INSTALLER)' || (\
-	   echo '\n❌ Signing keys not found. Install both the Application and Installer certificates:\n' \
-	      '    1. Download from: https://developer.apple.com/account/resources/certificates/list\n' \
-	      '    2. Double-click each file and add it to the "login" keychain\n' >&2; \
+	   echo '\n❌ Signing keys not found:\n' \
+	      '    1. Download intermediate Apple certificates: https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer\n' \
+	      '    2. Download our private keys: https://app.teampassword.com/dashboard#account/753842\n' \
+	      '    3. Double-click the files and add them to the "login" keychain\n' >&2; \
 	   exit 1)
 
