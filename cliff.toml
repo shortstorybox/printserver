@@ -1,0 +1,7 @@
+# git-cliff ~ configuration file
+# https://git-cliff.org/docs/configuration
+
+[git]
+conventional_commits = false
+filter_unconventional = true
+require_conventional = false
