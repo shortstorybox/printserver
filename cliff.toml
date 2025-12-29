@@ -1,0 +1,5 @@
+# git-cliff ~ configuration file
+# https://git-cliff.org/docs/configuration
+
+[git]
+conventional_commits = false
