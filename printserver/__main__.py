@@ -1,15 +1,53 @@
+import os
 import sys
 from importlib.metadata import version, PackageNotFoundError
+from pathlib import Path
 from waitress import serve
-from logging import basicConfig, INFO
+from logging import basicConfig, getLogger, Handler, INFO, StreamHandler
+from logging.handlers import RotatingFileHandler
 from printserver import api, index_page, allowlist_middleware, AllowDomainMiddleware
 import argparse
 
 DEFAULT_PORT = 2888
+LOG_FORMAT = "{asctime} {levelname} {name} (at {filename}:{lineno}]): {message}"
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_BACKUP_COUNT = 3
+
+logger = getLogger(__name__)
+
+
+def setup_logging():
+    # Always log to stderr for interactive use. On macOS, also log to a
+    # rotating file in the standard location: /Library/Logs when running as
+    # the launchd daemon (root), ~/Library/Logs otherwise.
+    handlers: list[Handler] = [StreamHandler()]
+    log_dir = None
+    if sys.platform == "darwin":
+        if os.geteuid() == 0:
+            log_dir = Path("/") / "Library" / "Logs" / "PrintServer"
+        else:
+            log_dir = Path.home() / "Library" / "Logs" / "PrintServer"
+    if log_dir is not None:
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            handlers.append(
+                RotatingFileHandler(
+                    log_dir / "PrintServer.log",
+                    maxBytes=LOG_MAX_BYTES,
+                    backupCount=LOG_BACKUP_COUNT,
+                )
+            )
+        except OSError as error:
+            basicConfig(level=INFO, style="{", format=LOG_FORMAT, handlers=handlers)
+            logger.warning("Could not open log file in %s: %s", log_dir, error)
+            return
+    basicConfig(level=INFO, style="{", format=LOG_FORMAT, handlers=handlers)
 
 
 def main():
-    basicConfig(level=INFO)  # set up logging
+    setup_logging()
+
+    logger.info("Print server starting...")
 
     def parse_origin(http_origin: str):
         if AllowDomainMiddleware.format_is_valid(
@@ -54,6 +92,7 @@ def main():
     for http_origin in args.allow or []:
         allowlist_middleware.allowlist.add(http_origin)
 
+    logger.info("Print server listening for jobs...")
     try:
         # This will run in a single process, but with multiple threads. The
         # number of threads is fairly large because non-async printjobs can
@@ -65,6 +104,11 @@ def main():
         sys.stderr.write("\nExiting due to Ctrl-C\n")
         sys.stderr.flush()
         pass  # Fail silently for Ctrl-C
+    except Exception:
+        # Make sure crashes are recorded in the log file, since launchd
+        # discards stderr.
+        logger.exception("PrintServer unhandled exception", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
