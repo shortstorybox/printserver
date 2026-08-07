@@ -1,26 +1,30 @@
-import re
-from threading import Lock
-from printserver.print_systems.base import (
-    PrintSystem,
-    PrinterSelector,
-    PrintFile,
-    PrintJob,
-    PrinterDetails,
-    JobState,
-    PrinterState,
-    PrintOption,
-    SizeUnit,
-    MediaSize,
-)
 import os
 import os.path
-from contextlib import ExitStack
-from tempfile import NamedTemporaryFile
+import re
 import time
-
-from falcon import HTTPInternalServerError, HTTPBadRequest
-from cups import Connection, IPPError, PPD, IPP_NOT_FOUND, IPP_NOT_AUTHORIZED
+from contextlib import ExitStack
+from logging import getLogger
+from tempfile import NamedTemporaryFile
+from threading import Lock
 from typing import Optional
+
+from cups import IPP_NOT_AUTHORIZED, IPP_NOT_FOUND, PPD, Connection, IPPError
+from falcon import HTTPBadRequest, HTTPInternalServerError
+
+from printserver.print_systems.base import (
+    JobState,
+    MediaSize,
+    PrinterDetails,
+    PrinterSelector,
+    PrinterState,
+    PrintFile,
+    PrintJob,
+    PrintOption,
+    PrintSystem,
+    SizeUnit,
+)
+
+logger = getLogger(__name__)
 
 
 # CUPS-specific options that are not printer-specific
@@ -110,6 +114,10 @@ class CupsPrintSystem(PrintSystem):
     def __init__(self):
         with cups_lock:
             self.conn = Connection()
+        # Cache of PPD-derived options, keyed by printer name. The first tuple
+        # value is the printer-config-change-time the options were parsed at.
+        # See _ppd_options().
+        self.ppd_options_cache: dict[str, tuple[Optional[int], list[PrintOption]]] = {}
 
     @classmethod
     def system_name(cls) -> str:
@@ -222,34 +230,11 @@ class CupsPrintSystem(PrintSystem):
                 )
 
             # Parse PPD options
-            try:
-                with cups_lock:
-                    ppd_file = self.conn.getPPD(printer_name)
-            except IPPError:
-                ppd_file = None
-            if ppd_file:
-                try:
-                    ppd = PPD(ppd_file)
-                except RuntimeError:
-                    ppd = None
-                if ppd:
-                    groups = list(ppd.optionGroups)
-                    for group in groups:
-                        for subgroup in group.subgroups:
-                            groups.append(subgroup)
-                        for option in group.options:
-                            default_choice = option.defchoice or None
-                            choices = [x["choice"] for x in option.choices]
-                            if default_choice and default_choice not in choices:
-                                choices = [default_choice] + choices
-                            supported_options.append(
-                                PrintOption(
-                                    keyword=option.keyword,
-                                    default_choice=default_choice,
-                                    choices=choices,
-                                    display_name=option.text,
-                                )
-                            )
+            supported_options.extend(
+                self._ppd_options(
+                    printer_name, ipp_attributes.get("printer-config-change-time")
+                )
+            )
 
             supported_options.extend(GENERIC_OPTIONS)
 
@@ -331,6 +316,69 @@ class CupsPrintSystem(PrintSystem):
             )
 
         return results
+
+    def _ppd_options(
+        self, printer_name: str, config_change_time: Optional[int]
+    ) -> list[PrintOption]:
+        """Return the options declared by a printer's PPD file.
+
+        The result is cached per printer, and re-parsed only when CUPS reports a
+        new printer-config-change-time. Caching is required for correctness, not
+        just speed: pycups' PPD() opens the underlying /etc/cups/ppd/*.ppd file
+        and never closes it, so parsing on every request leaks a file descriptor
+        each time and eventually fails the whole process with EMFILE.
+        """
+        cached = self.ppd_options_cache.get(printer_name)
+        if cached is not None and cached[0] == config_change_time:
+            return cached[1]
+
+        logger.info(
+            "Retrieving PPD options for printer %s, time %d",
+            printer_name,
+            config_change_time,
+        )
+
+        # Get the PPD file
+        try:
+            with cups_lock:
+                ppd_file = self.conn.getPPD(printer_name)
+        except IPPError:
+            ppd_file = None
+
+        options: list[PrintOption] = []
+        if ppd_file:
+            try:
+                try:
+                    ppd = PPD(ppd_file)
+                except RuntimeError:
+                    ppd = None
+                if ppd:
+                    groups = list(ppd.optionGroups)
+                    for group in groups:
+                        for subgroup in group.subgroups:
+                            groups.append(subgroup)
+                        for option in group.options:
+                            default_choice = option.defchoice or None
+                            choices = [x["choice"] for x in option.choices]
+                            if default_choice and default_choice not in choices:
+                                choices = [default_choice] + choices
+                            options.append(
+                                PrintOption(
+                                    keyword=option.keyword,
+                                    default_choice=default_choice,
+                                    choices=choices,
+                                    display_name=option.text,
+                                )
+                            )
+            finally:
+                # getPPD() writes a temporary copy that the caller owns.
+                try:
+                    os.unlink(ppd_file)
+                except OSError:
+                    pass
+
+        self.ppd_options_cache[printer_name] = (config_change_time, options)
+        return options
 
     @staticmethod
     def parse_ipp_attribute(option_name, value):
