@@ -3,6 +3,7 @@ import os.path
 import re
 import time
 from contextlib import ExitStack
+from dataclasses import dataclass
 from logging import getLogger
 from tempfile import NamedTemporaryFile
 from threading import Lock
@@ -110,6 +111,12 @@ DISALLOWED_OPTIONS = {
 cups_lock = Lock()
 
 
+@dataclass
+class PPDCacheEntry:
+    config_change_time: Optional[int]
+    options: list[PrintOption]
+
+
 class CupsPrintSystem(PrintSystem):
     def __init__(self):
         with cups_lock:
@@ -117,7 +124,7 @@ class CupsPrintSystem(PrintSystem):
         # Cache of PPD-derived options, keyed by printer name. The first tuple
         # value is the printer-config-change-time the options were parsed at.
         # See _ppd_options().
-        self.ppd_options_cache: dict[str, tuple[Optional[int], list[PrintOption]]] = {}
+        self.ppd_options_cache: dict[str, PPDCacheEntry] = {}
 
     @classmethod
     def system_name(cls) -> str:
@@ -329,8 +336,8 @@ class CupsPrintSystem(PrintSystem):
         each time and eventually fails the whole process with EMFILE.
         """
         cached = self.ppd_options_cache.get(printer_name)
-        if cached is not None and cached[0] == config_change_time:
-            return cached[1]
+        if cached is not None and cached.config_change_time == config_change_time:
+            return cached.options
 
         logger.info(
             "Retrieving PPD options for printer %s, time %d",
@@ -338,38 +345,34 @@ class CupsPrintSystem(PrintSystem):
             config_change_time,
         )
 
-        # Get the PPD file
+        # Get the PPD file for the printer
         try:
             with cups_lock:
                 ppd_file = self.conn.getPPD(printer_name)
         except IPPError:
+            logger.exception(
+                "Failed to retrieve PPD file for printer %s, time %d",
+                printer_name,
+                config_change_time,
+            )
             ppd_file = None
 
+        # Parse the PPD file
         options: list[PrintOption] = []
         if ppd_file:
             try:
                 try:
                     ppd = PPD(ppd_file)
                 except RuntimeError:
+                    logger.exception(
+                        "Failed to parse PPD file for printer %s, time %d",
+                        printer_name,
+                        config_change_time,
+                    )
                     ppd = None
+
                 if ppd:
-                    groups = list(ppd.optionGroups)
-                    for group in groups:
-                        for subgroup in group.subgroups:
-                            groups.append(subgroup)
-                        for option in group.options:
-                            default_choice = option.defchoice or None
-                            choices = [x["choice"] for x in option.choices]
-                            if default_choice and default_choice not in choices:
-                                choices = [default_choice] + choices
-                            options.append(
-                                PrintOption(
-                                    keyword=option.keyword,
-                                    default_choice=default_choice,
-                                    choices=choices,
-                                    display_name=option.text,
-                                )
-                            )
+                    options = self.parse_options_from_ppd_file(ppd)
             finally:
                 # getPPD() writes a temporary copy that the caller owns.
                 try:
@@ -377,7 +380,42 @@ class CupsPrintSystem(PrintSystem):
                 except OSError:
                     pass
 
-        self.ppd_options_cache[printer_name] = (config_change_time, options)
+        logger.info(
+            "Found %d PPD options for printer %s, time %d",
+            len(options),
+            printer_name,
+            config_change_time,
+        )
+        self.ppd_options_cache[printer_name] = PPDCacheEntry(
+            config_change_time, options
+        )
+
+        return options
+
+    @staticmethod
+    def parse_options_from_ppd_file(ppd) -> list[PrintOption]:
+        options: list[PrintOption] = []
+        groups = list(ppd.optionGroups)
+        for group in groups:
+            # An options group can contain subgroups in addition to it's own options.
+            # Traverse and parse all discovered groups.
+            for subgroup in group.subgroups:
+                groups.append(subgroup)
+
+            # Discover the options in this group and add them to the list of options.
+            for option in group.options:
+                default_choice = option.defchoice or None
+                choices = [x["choice"] for x in option.choices]
+                if default_choice and default_choice not in choices:
+                    choices = [default_choice] + choices
+                options.append(
+                    PrintOption(
+                        keyword=option.keyword,
+                        default_choice=default_choice,
+                        choices=choices,
+                        display_name=option.text,
+                    )
+                )
         return options
 
     @staticmethod
