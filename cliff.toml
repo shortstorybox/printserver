@@ -2,4 +2,4 @@
 # https://git-cliff.org/docs/configuration
 
 [git]
-conventional_commits = false
+conventional_commits = true
