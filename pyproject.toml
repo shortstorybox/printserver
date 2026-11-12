@@ -8,7 +8,7 @@ version = "2.4.5"  # Updated by `make version-bump`
 description = "The missing JavaScript Printer API"
 license = "GPL-3.0-or-later"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: GNU General Public License (GPL)",
@@ -33,7 +33,7 @@ dev = [
     "build>=1.2.2.post1",
     "pyinstaller>=6.12.0",
     "ruff>=0.11.2",
-    "twine>=6.1.0",
+    "twine>=7.0.0",
 ]
 
 [build-system]
