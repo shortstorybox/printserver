@@ -23,21 +23,25 @@ run: .setup
 .PHONY: lint
 lint: .setup
 	@uv lock --check && \
-	 uv run ruff check --quiet --no-fix printserver/ && \
-	 uv run ruff format --quiet --check printserver/ || ( \
+	 uv run ruff check --quiet --no-fix && \
+	 uv run ruff format --quiet --check || ( \
 	     echo '\n❌ Formatting issues found. Consider running `make fix`.' >&2; exit 1)
-	@uv run pyright --warnings --level warning printserver/
-	@!(grep -RIni --color=auto '[X]XX\|[D]O NOT MERGE\|[D]O NOT SUBMIT' printserver/ && \
+	@uv run pyright --warnings --level warning
+	@!(grep -RIni --color=auto '[X]XX\|[D]O NOT MERGE\|[D]O NOT SUBMIT' printserver/ printserver-test/ && \
 	   echo '\n❌ Found unresolved comments.')
 
 .PHONY: fix
 fix: .setup
 	uv lock
-	uv run ruff check --quiet --fix printserver/
-	uv run ruff format --quiet printserver/
-	uv run pyright --warnings --level warning printserver/
-	@!(grep -RIni --color=auto '[X]XX\|[D]O NOT MERGE\|[D]O NOT SUBMIT' printserver/ && \
+	uv run ruff check --quiet --fix
+	uv run ruff format --quiet
+	uv run pyright --warnings --level warning
+	@!(grep -RIni --color=auto '[X]XX\|[D]O NOT MERGE\|[D]O NOT SUBMIT' printserver/ printserver-test/ && \
 	   echo '\n❌ Found unresolved comments.')
+
+.PHONY: test
+test: .setup
+	@uv run pytest
 
 .PHONY: clean
 clean:
@@ -118,4 +122,3 @@ signing-keys:
 	      '    2. Download our private keys: https://app.teampassword.com/dashboard#account/753842\n' \
 	      '    3. Double-click the files and add them to the "login" keychain\n' >&2; \
 	   exit 1)
-

@@ -1,0 +1,76 @@
+name: PR
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - edited
+      - synchronize
+
+jobs:
+  tests:
+    needs: [conventional-commits, fmt, lint, pytest, pyright]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - if: ${{ contains(needs.*.result, 'failure') }}
+        run: exit 1
+  
+  conventional-commits:
+    name: "Conventional Commits"
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  pytest:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          cache-python: true
+          prune-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest
+
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          cache-python: true
+          prune-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check --quiet --no-fix
+
+  fmt:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          cache-python: true
+          prune-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff format --quiet --check
+
+  pyright:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          cache-python: true
+          prune-cache: true
+      - run: uv sync --locked
+      - run: uv run pyright --warnings --level warning
