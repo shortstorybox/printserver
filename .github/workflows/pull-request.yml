@@ -84,6 +84,14 @@ jobs:
       - uses: awalsh128/cache-apt-pkgs-action@v1.4.3
         with:
           packages: libcups2-dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "23.11.0"
+          cache: "npm"
+          # Dummy value so cache is always restored unconditionally
+          cache-dependency-path: '.python-version'
+      - name: Install pyright
+        run: npm install --global pyright
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           cache-python: true
