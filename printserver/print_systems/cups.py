@@ -140,6 +140,8 @@ class CupsPrintSystem(PrintSystem):
                 Connection().getPrinters()
         except IPPError:
             return False
+        except RuntimeError:  # Could not connect
+            return False
         return True
 
     def get_printers(self, printer_selector: PrinterSelector) -> list[PrinterDetails]:
